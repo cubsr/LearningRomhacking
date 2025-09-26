@@ -18,6 +18,7 @@
 #include "script_pokemon_util.h"
 #include "palette.h"
 #include "window.h"
+#include "caps.h"
 #include "event_object_movement.h"
 #include "event_scripts.h"
 #include "tv.h"
@@ -1156,6 +1157,9 @@ static void SetBattledTrainersFlags(void)
     if (TRAINER_BATTLE_PARAM.opponentB != 0)
         FlagSet(GetTrainerBFlag());
     FlagSet(GetTrainerAFlag());
+    
+    // Check if level cap has increased after this battle
+    CheckAndDisplayLevelCapIncrease();
 }
 
 static void UNUSED SetBattledTrainerFlag(void)

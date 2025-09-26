@@ -2011,6 +2011,25 @@ const struct Item gItemsInfo[] =
         .iconPalette = gItemIconPalette_RareCandy,
     },
 
+    [ITEM_LEVEL_UP] =
+    {
+        .name = ITEM_NAME("Level Up"),
+        .pluralName = ITEM_PLURAL_NAME("Level Ups"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "Raises the level\n"
+            "of a Pokémon by\n"
+            "one."),
+        .pocket = POCKET_ITEMS,
+        .sortType = ITEM_TYPE_LEVEL_UP_ITEM,
+        .type = ITEM_USE_PARTY_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_RareCandy,
+        .effect = gItemEffect_LevelUp,
+        .flingPower = 30,
+        .iconPic = gItemIcon_RareCandy,
+        .iconPalette = gItemIconPalette_RareCandy,
+    },
+
     [ITEM_EXP_CANDY_XS] =
     {
         .name = ITEM_NAME("Exp. Candy XS"),

@@ -3,21 +3,39 @@
 #include "event_data.h"
 #include "caps.h"
 #include "pokemon.h"
+#include "string_util.h"
+#include "menu_helpers.h"
+#include "strings.h"
 
 
 u32 GetCurrentLevelCap(void)
 {
     static const u32 sLevelCapFlagMap[][2] =
     {
-        {FLAG_BADGE01_GET, 15},
-        {FLAG_BADGE02_GET, 19},
-        {FLAG_BADGE03_GET, 24},
-        {FLAG_BADGE04_GET, 29},
-        {FLAG_BADGE05_GET, 31},
-        {FLAG_BADGE06_GET, 33},
-        {FLAG_BADGE07_GET, 42},
-        {FLAG_BADGE08_GET, 46},
-        {FLAG_IS_CHAMPION, 58},
+        // Custom level cap milestones based on story progression
+        {TRAINER_FLAGS_START + TRAINER_GRUNT_PETALBURG_WOODS, 12},  // Route 104 Aqua Grunt
+        {TRAINER_FLAGS_START + TRAINER_GRUNT_MUSEUM_1, 17},         // Museum Aqua Grunts
+        {FLAG_DEFEATED_DEWFORD_GYM, 21},                            // Leader Brawly
+        {FLAG_DEFEATED_RUSTBORO_GYM, 25},                           // Leader Roxanne
+        {TRAINER_FLAGS_START + TRAINER_LEAH, 32},                   // Route 117 Chelle
+        {FLAG_DEFEATED_MAUVILLE_GYM, 35},                           // Leader Wattson
+        {FLAG_DEFEATED_RIVAL_ROUTE103, 38},                         // Cycling Road Rival
+        {FLAG_DEFEATED_PETALBURG_GYM, 42},                          // Leader Norman
+        {TRAINER_FLAGS_START + TRAINER_FELIX, 48},                  // Fallarbor Town Vito
+        {TRAINER_FLAGS_START + TRAINER_ARCHIE, 54},                 // Mt. Chimney Maxie
+        {FLAG_DEFEATED_LAVARIDGE_GYM, 57},                          // Leader Flannery
+        {TRAINER_FLAGS_START + TRAINER_SHELLY_WEATHER_INSTITUTE, 65}, // Weather Institute Shelly
+        {FLAG_DEFEATED_RIVAL_ROUTE_104, 66},                        // Route 119 Rival
+        {FLAG_DEFEATED_FORTREE_GYM, 69},                            // Leader Winona
+        {FLAG_DEFEATED_RIVAL_RUSTBORO, 73},                         // Lilycove City Rival
+        {TRAINER_FLAGS_START + TRAINER_GRUNT_MT_PYRE_1, 76},        // Mt. Pyre Archie
+        {TRAINER_FLAGS_START + TRAINER_GRUNT_AQUA_HIDEOUT_1, 79},   // Magma Hideout Maxie
+        {TRAINER_FLAGS_START + TRAINER_MATT, 81},                   // Aqua Hideout Matt
+        {FLAG_DEFEATED_MOSSDEEP_GYM, 85},                           // Leaders Tate & Liza
+        {TRAINER_FLAGS_START + TRAINER_SHELLY_SEAFLOOR_CAVERN, 89}, // Seafloor Cavern Archie
+        {FLAG_DEFEATED_SOOTOPOLIS_GYM, 91},                         // Leader Juan
+        {TRAINER_FLAGS_START + TRAINER_VIOLET, 95},                 // Victory Road Vito
+        {FLAG_IS_CHAMPION, 100},                                    // After Victory Road Vito
     };
 
     u32 i;
@@ -115,4 +133,21 @@ u32 GetCurrentEVCap(void)
     }
 
     return MAX_TOTAL_EVS;
+}
+
+// Check if level cap has increased and display message
+void CheckAndDisplayLevelCapIncrease(void)
+{
+    static u32 sLastLevelCap = 0;
+    u32 currentLevelCap = GetCurrentLevelCap();
+    
+    if (currentLevelCap > sLastLevelCap && sLastLevelCap > 0)
+    {
+        // Level cap has increased - prepare message for display
+        ConvertIntToDecimalStringN(gStringVar1, currentLevelCap, STR_CONV_MODE_LEFT_ALIGN, 3);
+        StringExpandPlaceholders(gStringVar4, gText_LevelCapIncreased);
+        // The message is now ready in gStringVar4 for any system that wants to display it
+    }
+    
+    sLastLevelCap = currentLevelCap;
 }

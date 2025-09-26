@@ -5749,6 +5749,70 @@ void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
     }
 }
 
+void ItemUseCB_LevelUp(u8 taskId, TaskFunc task)
+{
+    struct Pokemon *mon = &gPlayerParty[gPartyMenu.slotId];
+    struct PartyMenuInternal *ptr = sPartyMenuInternal;
+    s16 *arrayPtr = ptr->data;
+    u16 *itemPtr = &gSpecialVar_ItemId;
+    bool8 cannotUseEffect;
+    u8 currentLevel = GetMonData(mon, MON_DATA_LEVEL);
+    u32 currentLevelCap = GetCurrentLevelCap();
+
+    sInitialLevel = currentLevel;
+    
+    // Check if Pokemon is already at or above the level cap
+    if (currentLevel >= currentLevelCap)
+    {
+        cannotUseEffect = TRUE;
+        gPartyMenuUseExitCallback = FALSE;
+        DisplayPartyMenuMessage(gText_LevelUpItemCapped, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = task;
+        return;
+    }
+    
+    // Use the item effect (level up by 1)
+    BufferMonStatsToTaskData(mon, arrayPtr);
+    cannotUseEffect = ExecuteTableBasedItemEffect(mon, *itemPtr, gPartyMenu.slotId, 0);
+    BufferMonStatsToTaskData(mon, &ptr->data[NUM_STATS]);
+    
+    PlaySE(SE_SELECT);
+    if (cannotUseEffect)
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        DisplayPartyMenuMessage(gText_WontHaveEffect, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = task;
+    }
+    else
+    {
+        sFinalLevel = GetMonData(mon, MON_DATA_LEVEL, NULL);
+        gPartyMenuUseExitCallback = TRUE;
+        UpdateMonDisplayInfoAfterRareCandy(gPartyMenu.slotId, mon);
+        RemoveBagItem(gSpecialVar_ItemId, 1);
+        GetMonNickname(mon, gStringVar1);
+        
+        if (sFinalLevel > sInitialLevel)
+        {
+            PlayFanfareByFanfareNum(FANFARE_LEVEL_UP);
+            ConvertIntToDecimalStringN(gStringVar2, sFinalLevel, STR_CONV_MODE_LEFT_ALIGN, 3);
+            StringExpandPlaceholders(gStringVar4, gText_PkmnElevatedToLvVar2);
+            DisplayPartyMenuMessage(gStringVar4, TRUE);
+            ScheduleBgCopyTilemapToVram(2);
+            gTasks[taskId].func = Task_DisplayLevelUpStatsPg1;
+        }
+        else
+        {
+            PlaySE(SE_USE_ITEM);
+            gPartyMenuUseExitCallback = FALSE;
+            DisplayPartyMenuMessage(gText_WontHaveEffect, FALSE);
+            ScheduleBgCopyTilemapToVram(2);
+            gTasks[taskId].func = task;
+        }
+    }
+}
+
 static void UpdateMonDisplayInfoAfterRareCandy(u8 slot, struct Pokemon *mon)
 {
     SetPartyMonAilmentGfx(mon, &sPartyMenuBoxes[slot]);
