@@ -5,6 +5,7 @@
 #include "fieldmap.h"
 #include "follower_npc.h"
 #include "random.h"
+#include "randomization.h"
 #include "field_player_avatar.h"
 #include "event_data.h"
 #include "safari_zone.h"
@@ -480,6 +481,21 @@ u8 PickWildMonNature(void)
 void CreateWildMon(u16 species, u8 level)
 {
     bool32 checkCuteCharm = TRUE;
+
+#if RANDOMIZATION_ENABLED == TRUE
+    // Apply randomization if enabled
+    if (IsRandomizationEnabled(RANDOMIZATION_WILD))
+    {
+        u32 locationId = GetCurrentMapWildMonHeaderId();
+        u8 encounterType = 0; // Default to land encounter
+        if (gIsFishingEncounter)
+            encounterType = WILD_AREA_FISHING;
+        else if (gIsSurfingEncounter)
+            encounterType = WILD_AREA_WATER;
+        
+        species = GetRandomizedWildSpecies(species, locationId, encounterType);
+    }
+#endif
 
     ZeroEnemyPartyMons();
 

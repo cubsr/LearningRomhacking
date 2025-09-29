@@ -6,6 +6,7 @@
 #include "cable_club.h"
 #include "data.h"
 #include "daycare.h"
+#include "randomization.h"
 #include "decompress.h"
 #include "event_data.h"
 #include "evolution_scene.h"
@@ -4533,13 +4534,22 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
 {
     const struct InGameTrade *inGameTrade = &sIngameTrades[whichInGameTrade];
     u8 level = GetMonData(&gPlayerParty[whichPlayerMon], MON_DATA_LEVEL);
+    u16 species = inGameTrade->species;
 
     struct Mail mail;
     u8 metLocation = METLOC_IN_GAME_TRADE;
     u8 mailNum;
     struct Pokemon *pokemon = &gEnemyParty[0];
 
-    CreateMon(pokemon, inGameTrade->species, level, USE_RANDOM_IVS, TRUE, inGameTrade->personality, OT_ID_PRESET, inGameTrade->otId);
+#if RANDOMIZATION_ENABLED == TRUE
+    // Apply randomization if enabled for trades
+    if (IsRandomizationEnabled(RANDOMIZATION_TRADES))
+    {
+        species = GetRandomizedTradeSpecies(species, whichInGameTrade);
+    }
+#endif
+
+    CreateMon(pokemon, species, level, USE_RANDOM_IVS, TRUE, inGameTrade->personality, OT_ID_PRESET, inGameTrade->otId);
 
     SetMonData(pokemon, MON_DATA_HP_IV, &inGameTrade->ivs[0]);
     SetMonData(pokemon, MON_DATA_ATK_IV, &inGameTrade->ivs[1]);

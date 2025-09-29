@@ -73,6 +73,80 @@ u8 ScriptGiveEgg(u16 species)
     return GiveMonToPlayer(&mon);
 }
 
+u8 ScriptGiveMon(u16 species, u8 level, u16 item, u16 ball, u8 nature, u8 abilityNum, u8 gender,
+                 u8 hpEv, u8 atkEv, u8 defEv, u8 speedEv, u8 spAtkEv, u8 spDefEv,
+                 u8 hpIv, u8 atkIv, u8 defIv, u8 speedIv, u8 spAtkIv, u8 spDefIv,
+                 u16 move1, u16 move2, u16 move3, u16 move4, bool8 isShiny, bool8 gmaxFactor, u8 teraType, u8 dmaxLevel)
+{
+    struct Pokemon mon;
+    
+    CreateMon(&mon, species, level, 32, isShiny, 0, nature, TRUE);
+    
+    // Set item
+    if (item != ITEM_NONE)
+        SetMonData(&mon, MON_DATA_HELD_ITEM, &item);
+    
+    // Set ball
+    if (ball != ITEM_NONE)
+        SetMonData(&mon, MON_DATA_POKEBALL, &ball);
+    
+    // Set ability
+    if (abilityNum != 0xFF)
+        SetMonData(&mon, MON_DATA_ABILITY_NUM, &abilityNum);
+    
+    // Set gender
+    if (gender != 0xFF)
+        SetMonData(&mon, MON_DATA_GENDER, &gender);
+    
+    // Set EVs
+    if (hpEv != 0xFF)
+        SetMonData(&mon, MON_DATA_HP_EV, &hpEv);
+    if (atkEv != 0xFF)
+        SetMonData(&mon, MON_DATA_ATK_EV, &atkEv);
+    if (defEv != 0xFF)
+        SetMonData(&mon, MON_DATA_DEF_EV, &defEv);
+    if (speedEv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPEED_EV, &speedEv);
+    if (spAtkEv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPATK_EV, &spAtkEv);
+    if (spDefEv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPDEF_EV, &spDefEv);
+    
+    // Set IVs
+    if (hpIv != 0xFF)
+        SetMonData(&mon, MON_DATA_HP_IV, &hpIv);
+    if (atkIv != 0xFF)
+        SetMonData(&mon, MON_DATA_ATK_IV, &atkIv);
+    if (defIv != 0xFF)
+        SetMonData(&mon, MON_DATA_DEF_IV, &defIv);
+    if (speedIv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPEED_IV, &speedIv);
+    if (spAtkIv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPATK_IV, &spAtkIv);
+    if (spDefIv != 0xFF)
+        SetMonData(&mon, MON_DATA_SPDEF_IV, &spDefIv);
+    
+    // Set moves
+    if (move1 != MOVE_NONE)
+        SetMonData(&mon, MON_DATA_MOVE1, &move1);
+    if (move2 != MOVE_NONE)
+        SetMonData(&mon, MON_DATA_MOVE2, &move2);
+    if (move3 != MOVE_NONE)
+        SetMonData(&mon, MON_DATA_MOVE3, &move3);
+    if (move4 != MOVE_NONE)
+        SetMonData(&mon, MON_DATA_MOVE4, &move4);
+    
+    // Set special flags
+    if (gmaxFactor)
+        SetMonData(&mon, MON_DATA_GMAX_FACTOR, &gmaxFactor);
+    if (teraType != TYPE_NONE)
+        SetMonData(&mon, MON_DATA_TERA_TYPE, &teraType);
+    if (dmaxLevel != 0)
+        SetMonData(&mon, MON_DATA_DMAX_LEVEL, &dmaxLevel);
+    
+    return GiveMonToPlayer(&mon);
+}
+
 void HasEnoughMonsForDoubleBattle(void)
 {
     switch (GetMonsStateToDoubles())

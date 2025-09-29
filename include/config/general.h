@@ -84,4 +84,12 @@
 #define AUTO_LOWERCASE_KEYBOARD      GEN_LATEST  // Starting in GEN_6, after entering the first uppercase character, the keyboard switches to lowercase letters.
 
 #define SAVE_TYPE_ERROR_SCREEN              FALSE   // When enabled, this shows an error message when the game is loaded on a cart without a flash chip or on an emulator with the wrong save type setting instead of crashing.
+
+// Randomization Settings
+#define RANDOMIZATION_ENABLED               TRUE    // If TRUE, enables the randomization system
+#define RANDOMIZATION_ASK_ON_NEW_GAME       TRUE    // If TRUE, asks player about randomization options when starting a new game
+#define RANDOMIZATION_DEFAULT_WILD          FALSE   // Default setting for wild encounter randomization
+#define RANDOMIZATION_DEFAULT_STATIC        FALSE   // Default setting for static encounter randomization  
+#define RANDOMIZATION_DEFAULT_TRADES        FALSE   // Default setting for trade randomization
+#define RANDOMIZATION_DEFAULT_SIMILAR_STATS TRUE    // Default setting for keeping similar stats (vs totally random)
 #endif // GUARD_CONFIG_GENERAL_H

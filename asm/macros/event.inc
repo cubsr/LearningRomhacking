@@ -1108,6 +1108,39 @@
 	.ifnb \dmaxLevel; .2byte \dmaxLevel; .endif
 	.endm
 
+	@ Gives the player a Pokemon with specified parameters.
+	@ VAR_RESULT will be set to MON_GIVEN_TO_PARTY, MON_GIVEN_TO_PC, or MON_CANT_GIVE depending on the outcome.
+	.macro givemon species:req, level:req, item=ITEM_NONE, ball=ITEM_NONE, nature=0xFF, abilityNum=0xFF, gender=0xFF, hpEv=0xFF, atkEv=0xFF, defEv=0xFF, speedEv=0xFF, spAtkEv=0xFF, spDefEv=0xFF, hpIv=0xFF, atkIv=0xFF, defIv=0xFF, speedIv=0xFF, spAtkIv=0xFF, spDefIv=0xFF, move1=MOVE_NONE, move2=MOVE_NONE, move3=MOVE_NONE, move4=MOVE_NONE, isShiny=FALSE, gmaxFactor=FALSE, teraType=TYPE_NONE, dmaxLevel=0
+	.byte SCR_OP_GIVEMON
+	.2byte \species
+	.byte \level
+	.2byte \item
+	.2byte \ball
+	.byte \nature
+	.byte \abilityNum
+	.byte \gender
+	.byte \hpEv
+	.byte \atkEv
+	.byte \defEv
+	.byte \speedEv
+	.byte \spAtkEv
+	.byte \spDefEv
+	.byte \hpIv
+	.byte \atkIv
+	.byte \defIv
+	.byte \speedIv
+	.byte \spAtkIv
+	.byte \spDefIv
+	.2byte \move1
+	.2byte \move2
+	.2byte \move3
+	.2byte \move4
+	.byte \isShiny
+	.byte \gmaxFactor
+	.byte \teraType
+	.byte \dmaxLevel
+	.endm
+
 	@ Gives the player an Egg of the specified species.
 	@ VAR_RESULT will be set to MON_GIVEN_TO_PARTY, MON_GIVEN_TO_PC, or MON_CANT_GIVE depending on the outcome.
 	.macro giveegg species:req

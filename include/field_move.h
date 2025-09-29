@@ -14,6 +14,8 @@ struct FieldMoveInfo
 
 extern const struct FieldMoveInfo gFieldMoveInfo[];
 
+bool32 IsMoveAnHM(u16 move);
+
 static inline bool32 SetUpFieldMove(enum FieldMove fieldMove)
 {
     return gFieldMoveInfo[fieldMove].fieldMoveFunc();

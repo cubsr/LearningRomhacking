@@ -602,6 +602,11 @@ struct SaveBlock2
 #endif //FREE_RECORD_MIXING_HALL_RECORDS
     /*0x624*/ u16 contestLinkResults[CONTEST_CATEGORIES_COUNT][CONTESTANT_COUNT];
     /*0x64C*/ struct BattleFrontier frontier;
+#if RANDOMIZATION_ENABLED == TRUE
+    /*0x12AC*/ u32 randomizationSeed; // Seed for randomization based on trainer ID
+    /*0x12B0*/ u8 randomizationFlags; // Flags for which randomization types are enabled
+    /*0x12B1*/ u8 randomizationSimilarStats; // Whether to keep similar stats or totally random
+#endif
 }; // sizeof=0xF2C
 
 extern struct SaveBlock2 *gSaveBlock2Ptr;

@@ -7,6 +7,14 @@
 #include "constants/field_move.h"
 #include "constants/moves.h"
 #include "constants/party_menu.h"
+#include "config/pokemon.h"
+
+bool32 IsMoveAnHM(u16 move)
+{
+    return (move == MOVE_CUT || move == MOVE_FLY || move == MOVE_SURF || 
+            move == MOVE_STRENGTH || move == MOVE_FLASH || move == MOVE_ROCK_SMASH || 
+            move == MOVE_WATERFALL || move == MOVE_DIVE);
+}
 
 static bool32 IsFieldMoveUnlocked_Cut(void)
 {

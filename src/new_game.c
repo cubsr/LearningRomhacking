@@ -48,6 +48,7 @@
 #include "constants/items.h"
 #include "difficulty.h"
 #include "follower_npc.h"
+#include "randomization.h"
 
 extern const u8 EventScript_ResetAllMapFlags[];
 
@@ -168,6 +169,10 @@ void NewGameInitData(void)
     gSaveBlock2Ptr->specialSaveWarpFlags = 0;
     gSaveBlock2Ptr->gcnLinkFlags = 0;
     InitPlayerTrainerId();
+#if RANDOMIZATION_ENABLED == TRUE
+    // Initialize randomization system with trainer ID
+    InitializeRandomization(GetTrainerId(gSaveBlock2Ptr->playerTrainerId));
+#endif
     PlayTimeCounter_Reset();
     ClearPokedexFlags();
     InitEventData();

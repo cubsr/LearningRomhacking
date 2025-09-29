@@ -19,6 +19,7 @@
 #include "field_control_avatar.h"
 #include "field_effect.h"
 #include "field_move.h"
+#include "config/pokemon.h"
 #include "field_player_avatar.h"
 #include "field_screen_effect.h"
 #include "field_specials.h"
@@ -2840,6 +2841,32 @@ static void SetPartyMonFieldSelectionActions(struct Pokemon *mons, u8 slotId)
             {
                 AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, j + MENU_FIELD_MOVES);
                 break;
+            }
+        }
+    }
+    
+    // If HMs can be used without teaching, add all unlocked HM field moves
+    if (P_USE_HMS_WITHOUT_TEACHING)
+    {
+        for (j = 0; j != FIELD_MOVES_COUNT; j++)
+        {
+            u16 moveId = FieldMove_GetMoveId(j);
+            if (IsMoveAnHM(moveId) && IsFieldMoveUnlocked(j))
+            {
+                // Check if this field move is already in the list
+                bool8 alreadyAdded = FALSE;
+                for (i = 0; i < sPartyMenuInternal->numActions; i++)
+                {
+                    if (sPartyMenuInternal->actions[i] == j + MENU_FIELD_MOVES)
+                    {
+                        alreadyAdded = TRUE;
+                        break;
+                    }
+                }
+                if (!alreadyAdded)
+                {
+                    AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, j + MENU_FIELD_MOVES);
+                }
             }
         }
     }
@@ -5790,7 +5817,8 @@ void ItemUseCB_LevelUp(u8 taskId, TaskFunc task)
         sFinalLevel = GetMonData(mon, MON_DATA_LEVEL, NULL);
         gPartyMenuUseExitCallback = TRUE;
         UpdateMonDisplayInfoAfterRareCandy(gPartyMenu.slotId, mon);
-        RemoveBagItem(gSpecialVar_ItemId, 1);
+        if (GetItemConsumability(gSpecialVar_ItemId))
+            RemoveBagItem(gSpecialVar_ItemId, 1);
         GetMonNickname(mon, gStringVar1);
         
         if (sFinalLevel > sInitialLevel)

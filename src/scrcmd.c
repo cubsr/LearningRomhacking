@@ -15,6 +15,7 @@
 #include "field_door.h"
 #include "field_effect.h"
 #include "field_move.h"
+#include "config/pokemon.h"
 #include "event_object_lock.h"
 #include "event_object_movement.h"
 #include "event_scripts.h"
@@ -2264,6 +2265,55 @@ bool8 ScrCmd_bufferboxname(struct ScriptContext *ctx)
     return FALSE;
 }
 
+bool8 ScrCmd_givemon(struct ScriptContext *ctx)
+{
+    u16 species = VarGet(ScriptReadHalfword(ctx));
+    u8 level = ScriptReadByte(ctx);
+    u16 item = VarGet(ScriptReadHalfword(ctx));
+    u16 ball = VarGet(ScriptReadHalfword(ctx));
+    u8 nature = ScriptReadByte(ctx);
+    u8 abilityNum = ScriptReadByte(ctx);
+    u8 gender = ScriptReadByte(ctx);
+    u8 hpEv = ScriptReadByte(ctx);
+    u8 atkEv = ScriptReadByte(ctx);
+    u8 defEv = ScriptReadByte(ctx);
+    u8 speedEv = ScriptReadByte(ctx);
+    u8 spAtkEv = ScriptReadByte(ctx);
+    u8 spDefEv = ScriptReadByte(ctx);
+    u8 hpIv = ScriptReadByte(ctx);
+    u8 atkIv = ScriptReadByte(ctx);
+    u8 defIv = ScriptReadByte(ctx);
+    u8 speedIv = ScriptReadByte(ctx);
+    u8 spAtkIv = ScriptReadByte(ctx);
+    u8 spDefIv = ScriptReadByte(ctx);
+    u16 move1 = VarGet(ScriptReadHalfword(ctx));
+    u16 move2 = VarGet(ScriptReadHalfword(ctx));
+    u16 move3 = VarGet(ScriptReadHalfword(ctx));
+    u16 move4 = VarGet(ScriptReadHalfword(ctx));
+    bool8 isShiny = ScriptReadByte(ctx);
+    bool8 gmaxFactor = ScriptReadByte(ctx);
+    u8 teraType = ScriptReadByte(ctx);
+    u8 dmaxLevel = ScriptReadByte(ctx);
+
+    Script_RequestEffects(SCREFF_V1 | SCREFF_SAVE);
+
+#if RANDOMIZATION_ENABLED == TRUE
+    // Apply randomization if enabled for static encounters
+    if (IsRandomizationEnabled(RANDOMIZATION_STATIC))
+    {
+        u32 mapId = (gSaveBlock1Ptr->location.mapGroup << 8) | gSaveBlock1Ptr->location.mapNum;
+        u32 objectId = 0; // For givemon, we use 0 as object ID
+        species = GetRandomizedStaticSpecies(species, mapId, objectId);
+    }
+#endif
+
+    gSpecialVar_Result = ScriptGiveMon(species, level, item, ball, nature, abilityNum, gender,
+                                       hpEv, atkEv, defEv, speedEv, spAtkEv, spDefEv,
+                                       hpIv, atkIv, defIv, speedIv, spAtkIv, spDefIv,
+                                       move1, move2, move3, move4, isShiny, gmaxFactor, teraType, dmaxLevel);
+    return FALSE;
+}
+
 bool8 ScrCmd_giveegg(struct ScriptContext *ctx)
 {
     u16 species = VarGet(ScriptReadHalfword(ctx));
@@ -2299,16 +2349,38 @@ bool8 ScrCmd_checkfieldmove(struct ScriptContext *ctx)
         return FALSE;
 
     move = FieldMove_GetMoveId(fieldMove);
-    for (u32 i = 0; i < PARTY_SIZE; i++)
+    
+    // Check if this is an HM and if we can use HMs without teaching
+    if (P_USE_HMS_WITHOUT_TEACHING && IsMoveAnHM(move))
     {
-        u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES, NULL);
-        if (!species)
-            break;
-        if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && MonKnowsMove(&gPlayerParty[i], move) == TRUE)
+        // For HMs, just find any non-egg Pokémon in the party
+        for (u32 i = 0; i < PARTY_SIZE; i++)
         {
-            gSpecialVar_Result = i;
-            gSpecialVar_0x8004 = species;
-            break;
+            u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES, NULL);
+            if (!species)
+                break;
+            if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
+            {
+                gSpecialVar_Result = i;
+                gSpecialVar_0x8004 = species;
+                break;
+            }
+        }
+    }
+    else
+    {
+        // Original logic: require the Pokémon to know the move
+        for (u32 i = 0; i < PARTY_SIZE; i++)
+        {
+            u16 species = GetMonData(&gPlayerParty[i], MON_DATA_SPECIES, NULL);
+            if (!species)
+                break;
+            if (!GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG) && MonKnowsMove(&gPlayerParty[i], move) == TRUE)
+            {
+                gSpecialVar_Result = i;
+                gSpecialVar_0x8004 = species;
+                break;
+            }
         }
     }
 
