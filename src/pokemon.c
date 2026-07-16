@@ -1887,15 +1887,22 @@ void GiveBoxMonInitialMoveset(struct BoxPokemon *boxMon) //Credit: AsparagusEdua
     {
         s32 j;
         bool32 alreadyKnown = FALSE;
+        u16 move;
 
         if (learnset[i].level > level)
             break;
         if (learnset[i].level == 0)
             continue;
 
+#if RANDOMIZATION_ENABLED == TRUE
+        move = GetRandomizedMove(learnset[i].move, species);
+#else
+        move = learnset[i].move;
+#endif
+
         for (j = 0; j < addedMoves; j++)
         {
-            if (moves[j] == learnset[i].move)
+            if (moves[j] == move)
             {
                 alreadyKnown = TRUE;
                 break;
@@ -1906,14 +1913,14 @@ void GiveBoxMonInitialMoveset(struct BoxPokemon *boxMon) //Credit: AsparagusEdua
         {
             if (addedMoves < MAX_MON_MOVES)
             {
-                moves[addedMoves] = learnset[i].move;
+                moves[addedMoves] = move;
                 addedMoves++;
             }
             else
             {
                 for (j = 0; j < MAX_MON_MOVES - 1; j++)
                     moves[j] = moves[j + 1];
-                moves[MAX_MON_MOVES - 1] = learnset[i].move;
+                moves[MAX_MON_MOVES - 1] = move;
             }
         }
     }
@@ -1969,6 +1976,9 @@ u16 MonTryLearningNewMoveAtLevel(struct Pokemon *mon, bool32 firstMove, u32 leve
     if (learnset[sLearningMoveTableID].level == level)
     {
         gMoveToLearn = learnset[sLearningMoveTableID].move;
+#if RANDOMIZATION_ENABLED == TRUE
+        gMoveToLearn = GetRandomizedMove(gMoveToLearn, species);
+#endif
         sLearningMoveTableID++;
         retVal = GiveMoveToMon(mon, gMoveToLearn);
     }
@@ -3412,6 +3422,10 @@ u16 GetAbilityBySpecies(u16 species, u8 abilityNum)
     {
         gLastUsedAbility = GetSpeciesAbility(species, i);
     }
+
+#if RANDOMIZATION_ENABLED == TRUE
+    gLastUsedAbility = GetRandomizedAbility(gLastUsedAbility, species, abilityNum);
+#endif
 
     return gLastUsedAbility;
 }
@@ -6745,6 +6759,9 @@ u16 MonTryLearningNewMoveEvolution(struct Pokemon *mon, bool8 firstMove)
              && !(P_EVOLUTION_LEVEL_1_LEARN >= GEN_8 && learnset[sLearningMoveTableID].level == 1))
         {
             gMoveToLearn = learnset[sLearningMoveTableID].move;
+#if RANDOMIZATION_ENABLED == TRUE
+            gMoveToLearn = GetRandomizedMove(gMoveToLearn, species);
+#endif
             sLearningMoveTableID++;
             return GiveMoveToMon(mon, gMoveToLearn);
         }

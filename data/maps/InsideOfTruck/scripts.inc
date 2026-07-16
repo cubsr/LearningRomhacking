@@ -15,6 +15,7 @@ InsideOfTruck_OnResume:
 
 InsideOfTruck_EventScript_SetIntroFlags::
 	lockall
+	call InsideOfTruck_EventScript_RandomizerPrompt
 	setflag FLAG_HIDE_MAP_NAME_POPUP
 	checkplayergender
 	goto_if_eq VAR_RESULT, MALE, InsideOfTruck_EventScript_SetIntroFlagsMale
@@ -46,6 +47,65 @@ InsideOfTruck_EventScript_SetIntroFlagsFemale::
 	setdynamicwarp MAP_LITTLEROOT_TOWN, 12, 10
 	releaseall
 	end
+
+@ One-time randomizer setup, asked during the opening truck ride.
+@ Builds a RANDOMIZATION_FLAG_* mask in VAR_TEMP_0, then applies it.
+InsideOfTruck_EventScript_RandomizerPrompt::
+	setvar VAR_TEMP_0, 0
+	msgbox InsideOfTruck_Text_RandomizeEncounters, MSGBOX_YESNO
+	call_if_eq VAR_RESULT, YES, InsideOfTruck_EventScript_RandoAddEncounters
+	msgbox InsideOfTruck_Text_RandomizeTrainers, MSGBOX_YESNO
+	call_if_eq VAR_RESULT, YES, InsideOfTruck_EventScript_RandoAddTrainers
+	msgbox InsideOfTruck_Text_RandomizeAbilities, MSGBOX_YESNO
+	call_if_eq VAR_RESULT, YES, InsideOfTruck_EventScript_RandoAddAbilities
+	msgbox InsideOfTruck_Text_RandomizeMoves, MSGBOX_YESNO
+	call_if_eq VAR_RESULT, YES, InsideOfTruck_EventScript_RandoAddMoves
+	msgbox InsideOfTruck_Text_RandomizeItems, MSGBOX_YESNO
+	call_if_eq VAR_RESULT, YES, InsideOfTruck_EventScript_RandoAddItems
+	copyvar VAR_0x8004, VAR_TEMP_0
+	special ApplyRandomizationChoices
+	setvar VAR_TEMP_0, 0
+	return
+
+InsideOfTruck_EventScript_RandoAddEncounters::
+	addvar VAR_TEMP_0, 7    @ RANDOMIZATION_FLAG_WILD | STATIC | TRADES
+	return
+
+InsideOfTruck_EventScript_RandoAddTrainers::
+	addvar VAR_TEMP_0, 8    @ RANDOMIZATION_FLAG_TRAINERS
+	return
+
+InsideOfTruck_EventScript_RandoAddAbilities::
+	addvar VAR_TEMP_0, 16   @ RANDOMIZATION_FLAG_ABILITIES
+	return
+
+InsideOfTruck_EventScript_RandoAddMoves::
+	addvar VAR_TEMP_0, 32   @ RANDOMIZATION_FLAG_MOVES
+	return
+
+InsideOfTruck_EventScript_RandoAddItems::
+	addvar VAR_TEMP_0, 64   @ RANDOMIZATION_FLAG_ITEMS
+	return
+
+InsideOfTruck_Text_RandomizeEncounters:
+	.string "RANDOMIZER SETUP\p"
+	.string "Randomize wild POKéMON, gifts,\n"
+	.string "and trades?$"
+
+InsideOfTruck_Text_RandomizeTrainers:
+	.string "Randomize TRAINERS' POKéMON?$"
+
+InsideOfTruck_Text_RandomizeAbilities:
+	.string "Randomize POKéMON abilities?$"
+
+InsideOfTruck_Text_RandomizeMoves:
+	.string "Randomize POKéMON movesets?\p"
+	.string "Moves will favor each POKéMON's\n"
+	.string "own type.$"
+
+InsideOfTruck_Text_RandomizeItems:
+	.string "Randomize items found in\n"
+	.string "ITEM BALLS?$"
 
 InsideOfTruck_EventScript_MovingBox::
 	msgbox InsideOfTruck_Text_BoxPrintedWithMonLogo, MSGBOX_SIGN

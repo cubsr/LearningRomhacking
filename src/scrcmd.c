@@ -16,6 +16,7 @@
 #include "field_effect.h"
 #include "field_move.h"
 #include "config/pokemon.h"
+#include "randomization.h"
 #include "event_object_lock.h"
 #include "event_object_movement.h"
 #include "event_scripts.h"
@@ -2307,7 +2308,7 @@ bool8 ScrCmd_givemon(struct ScriptContext *ctx)
     }
 #endif
 
-    gSpecialVar_Result = ScriptGiveMon(species, level, item, ball, nature, abilityNum, gender,
+    gSpecialVar_Result = ScriptGiveMonFull(species, level, item, ball, nature, abilityNum, gender,
                                        hpEv, atkEv, defEv, speedEv, spAtkEv, spDefEv,
                                        hpIv, atkIv, defIv, speedIv, spAtkIv, spDefIv,
                                        move1, move2, move3, move4, isShiny, gmaxFactor, teraType, dmaxLevel);

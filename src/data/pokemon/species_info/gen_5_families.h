@@ -1370,7 +1370,7 @@ const struct SpeciesInfo gSpeciesInfoGen5[] =
     [SPECIES_SIMISAGE] =
     {
         .baseHP        = 75,
-        .baseAttack    = 98,
+        .baseAttack    = 128,
         .baseDefense   = 63,
         .baseSpeed     = 101,
         .baseSpAttack  = 98,

@@ -213,7 +213,7 @@ MAKEFLAGS += --no-print-directory
 .DELETE_ON_ERROR:
 
 RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck generated clean-generated
-.PHONY: all rom agbcc modern compare check debug
+.PHONY: all rom agbcc modern compare check test debug
 .PHONY: $(RULES_NO_SCAN)
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
@@ -312,6 +312,8 @@ check: $(TESTELF)
 	@cp $< $(HEADLESSELF)
 	$(PATCHELF) $(HEADLESSELF) gTestRunnerHeadless '\x01' gTestRunnerSkipIsFail "$(TEST_SKIP_IS_FAIL)"
 	$(ROMTESTHYDRA) $(ROMTEST) $(OBJCOPY) $(HEADLESSELF)
+
+test: check
 
 # Other rules
 rom: $(ROM)

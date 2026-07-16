@@ -109,6 +109,7 @@ enum {
     MENU_CATALOG_MOWER,
     MENU_CHANGE_FORM,
     MENU_CHANGE_ABILITY,
+    MENU_LEVEL_TO_CAP,
     MENU_FIELD_MOVES
 };
 
@@ -486,6 +487,7 @@ static void CursorCb_CatalogFan(u8);
 static void CursorCb_CatalogMower(u8);
 static void CursorCb_ChangeForm(u8);
 static void CursorCb_ChangeAbility(u8);
+static void CursorCb_LevelToCap(u8);
 void TryItemHoldFormChange(struct Pokemon *mon, s8 slotId);
 static void ShowMoveSelectWindow(u8 slot);
 static void Task_HandleWhichMoveInput(u8 taskId);
@@ -2831,6 +2833,10 @@ static void SetPartyMonFieldSelectionActions(struct Pokemon *mons, u8 slotId)
 
     sPartyMenuInternal->numActions = 0;
     AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, MENU_SUMMARY);
+
+    if (!GetMonData(&mons[slotId], MON_DATA_IS_EGG)
+     && GetMonData(&mons[slotId], MON_DATA_LEVEL) < GetCurrentLevelCap())
+        AppendToList(sPartyMenuInternal->actions, &sPartyMenuInternal->numActions, MENU_LEVEL_TO_CAP);
 
     // Add field moves to action list
     for (i = 0; i < MAX_MON_MOVES; i++)
@@ -5839,6 +5845,52 @@ void ItemUseCB_LevelUp(u8 taskId, TaskFunc task)
             gTasks[taskId].func = task;
         }
     }
+}
+
+// "LV. TO CAP" party menu action: raise the mon to the current level cap,
+// then run the shared level-up flow (stat pages -> move learning per level -> evolution).
+static void CursorCb_LevelToCap(u8 taskId)
+{
+    struct Pokemon *mon = &gPlayerParty[gPartyMenu.slotId];
+    struct PartyMenuInternal *ptr = sPartyMenuInternal;
+    u32 levelCap = GetCurrentLevelCap();
+    u16 species;
+    u32 exp;
+
+    PlaySE(SE_SELECT);
+    PartyMenuRemoveWindow(&ptr->windowId[1]);
+    PartyMenuRemoveWindow(&ptr->windowId[0]);
+
+    sInitialLevel = GetMonData(mon, MON_DATA_LEVEL);
+    if (sInitialLevel >= levelCap || levelCap > MAX_LEVEL || GetMonData(mon, MON_DATA_IS_EGG))
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        DisplayPartyMenuMessage(gText_LevelUpItemCapped, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = Task_ReturnToChooseMonAfterText;
+        return;
+    }
+
+    BufferMonStatsToTaskData(mon, ptr->data);
+    species = GetMonData(mon, MON_DATA_SPECIES);
+    exp = gExperienceTables[gSpeciesInfo[species].growthRate][levelCap];
+    SetMonData(mon, MON_DATA_EXP, &exp);
+    CalculateMonStats(mon);
+    sFinalLevel = GetMonData(mon, MON_DATA_LEVEL);
+    BufferMonStatsToTaskData(mon, &ptr->data[NUM_STATS]);
+
+    // The follow-up tasks consult gSpecialVar_ItemId; clear it so nothing is
+    // consumed and the flow exits cleanly instead of looping like Rare Candy.
+    gSpecialVar_ItemId = ITEM_NONE;
+    gPartyMenuUseExitCallback = TRUE;
+    UpdateMonDisplayInfoAfterRareCandy(gPartyMenu.slotId, mon);
+    GetMonNickname(mon, gStringVar1);
+    PlayFanfareByFanfareNum(FANFARE_LEVEL_UP);
+    ConvertIntToDecimalStringN(gStringVar2, sFinalLevel, STR_CONV_MODE_LEFT_ALIGN, 3);
+    StringExpandPlaceholders(gStringVar4, gText_PkmnElevatedToLvVar2);
+    DisplayPartyMenuMessage(gStringVar4, TRUE);
+    ScheduleBgCopyTilemapToVram(2);
+    gTasks[taskId].func = Task_DisplayLevelUpStatsPg1;
 }
 
 static void UpdateMonDisplayInfoAfterRareCandy(u8 slot, struct Pokemon *mon)
