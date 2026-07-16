@@ -1,13 +1,17 @@
 #include "global.h"
 #include "test/battle.h"
 
+ASSUMPTIONS
+{
+    ASSUME(GetMoveEffect(MOVE_ENDURE) == EFFECT_ENDURE);
+}
+
 TO_DO_BATTLE_TEST("Endure allows the user to survive any attack with 1 HP left");
 
 SINGLE_BATTLE_TEST("Endure does not prevent multiple hits and stat changes occur at the end of the turn")
 {
     GIVEN {
-        ASSUME(GetMoveEffect(MOVE_SCALE_SHOT) == EFFECT_MULTI_HIT);
-        ASSUME(GetMoveEffect(MOVE_ENDURE) == EFFECT_ENDURE);
+        ASSUME(IsMultiHitMove(MOVE_SCALE_SHOT));
         PLAYER(SPECIES_WOBBUFFET);
         OPPONENT(SPECIES_WOBBUFFET) { HP(1); }
     } WHEN {
@@ -51,6 +55,70 @@ DOUBLE_BATTLE_TEST("Endure is not transferred to a mon that is switched in due t
         ANIMATION(ANIM_TYPE_GENERAL, B_ANIM_HELD_ITEM_EFFECT, opponentRight);
         ANIMATION(ANIM_TYPE_MOVE, MOVE_POUND, playerRight);
         NOT MESSAGE("The opposing Squirtle endured the hit!");
+    }
+}
+
+SINGLE_BATTLE_TEST("Endure only lasts for one turn")
+{
+    GIVEN {
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET) { HP(1); }
+    } WHEN {
+        TURN { MOVE(opponent, MOVE_ENDURE); MOVE(player, MOVE_POUND); }
+        TURN { MOVE(player, MOVE_POUND); }
+    } SCENE {
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_ENDURE, opponent);
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_POUND, player);
+        MESSAGE("The opposing Wobbuffet endured the hit!");
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_POUND, player);
+        NOT MESSAGE("The opposing Wobbuffet endured the hit!");
+    }
+}
+
+SINGLE_BATTLE_TEST("Endure takes precedence over False Swipe (Gen 5+)")
+{
+    GIVEN {
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET) { HP(1); }
+    } WHEN {
+        TURN { MOVE(opponent, MOVE_ENDURE); MOVE(player, MOVE_FALSE_SWIPE); }
+    } SCENE {
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_ENDURE, opponent);
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_FALSE_SWIPE, player);
+        MESSAGE("The opposing Wobbuffet endured the hit!");
+        // No message for False Swipe, but Endure message should still happen
+    }
+}
+
+SINGLE_BATTLE_TEST("Endure takes precedence over Sturdy (Gen 5+)")
+{
+    GIVEN {
+        WITH_CONFIG(B_STURDY, GEN_5);
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_ARON) { HP(1); MaxHP(1); Ability(ABILITY_STURDY); }
+    } WHEN {
+        TURN { MOVE(opponent, MOVE_ENDURE); MOVE(player, MOVE_POUND); }
+    } SCENE {
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_ENDURE, opponent);
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_POUND, player);
+        MESSAGE("The opposing Aron endured the hit!");
+        NOT ABILITY_POPUP(opponent, ABILITY_STURDY);
+    }
+}
+
+SINGLE_BATTLE_TEST("Endure takes precedence over Focus Sash/Focus Band")
+{
+    GIVEN {
+        ASSUME(GetItemHoldEffect(ITEM_FOCUS_SASH) == HOLD_EFFECT_FOCUS_SASH);
+        PLAYER(SPECIES_WOBBUFFET);
+        OPPONENT(SPECIES_WOBBUFFET) { HP(1); MaxHP(1); Item(ITEM_FOCUS_SASH); }
+    } WHEN {
+        TURN { MOVE(opponent, MOVE_ENDURE); MOVE(player, MOVE_POUND); }
+    } SCENE {
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_ENDURE, opponent);
+        ANIMATION(ANIM_TYPE_MOVE, MOVE_POUND, player);
+        MESSAGE("The opposing Wobbuffet endured the hit!");
+        NOT ANIMATION(ANIM_TYPE_GENERAL, B_ANIM_HELD_ITEM_EFFECT, opponent);
     }
 }
 
