@@ -52,9 +52,10 @@ u16 GetRandomizedTradeSpecies(u16 originalSpecies, u32 tradeId);
 // Get randomized species for a trainer's party slot (seed-explicit for co-op)
 u16 GetRandomizedTrainerMonSpecies(u32 seed, u16 originalSpecies, u16 trainerId, u8 slot);
 
-// Ability/move remaps (no-ops when their toggles are off)
+// Ability/move/item remaps (no-ops when their toggles are off)
 u16 GetRandomizedAbility(u16 ability, u16 species, u8 abilityNum);
 u16 GetRandomizedMove(u16 move, u16 species);
+u16 GetRandomizedItem(u16 item, u32 key1, u32 key2);
 
 // Nonzero = use this seed for ability/move remaps (co-op battle sync); 0 = own save seed
 void SetRandomizationSeedOverride(u32 seed);

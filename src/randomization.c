@@ -1,9 +1,12 @@
 #include "global.h"
 #include "randomization.h"
 #include "event_data.h"
+#include "item.h"
 #include "move.h"
 #include "pokemon.h"
 #include "constants/abilities.h"
+#include "constants/item.h"
+#include "constants/items.h"
 #include "constants/moves.h"
 #include "constants/species.h"
 
@@ -259,6 +262,31 @@ u16 GetRandomizedMove(u16 move, u16 species)
     if (!IsRandomMoveAllowed(move))
         move = MOVE_POUND;
     return move;
+}
+
+// Remap a picked-up item. Progression-relevant items (key items, TMs/HMs)
+// are never replaced, and never appear as replacements.
+u16 GetRandomizedItem(u16 item, u32 key1, u32 key2)
+{
+    u32 hash, attempt;
+    enum Pocket pocket;
+
+    if (item == ITEM_NONE || item >= ITEMS_COUNT || !IsRandomizationEnabled(RANDOMIZATION_ITEMS))
+        return item;
+    pocket = GetItemPocket(item);
+    if (pocket == POCKET_KEY_ITEMS || pocket == POCKET_TM_HM)
+        return item;
+
+    hash = RandomizerKey(gSaveBlock2Ptr->randomizationSeed, item | 0x60000, key1, key2);
+    for (attempt = 0; attempt < 24; attempt++)
+    {
+        u16 candidate = (hash % (ITEMS_COUNT - 1)) + 1;
+        pocket = GetItemPocket(candidate);
+        if (pocket != POCKET_KEY_ITEMS && pocket != POCKET_TM_HM && candidate != ITEM_LEVEL_UP)
+            return candidate;
+        hash = RandomizerHash(hash + attempt + 1);
+    }
+    return item;
 }
 
 #endif // RANDOMIZATION_ENABLED

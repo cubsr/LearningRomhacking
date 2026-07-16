@@ -1,6 +1,7 @@
 #include "global.h"
 #include "item_ball.h"
 #include "event_data.h"
+#include "randomization.h"
 #include "constants/event_objects.h"
 #include "constants/items.h"
 
@@ -27,6 +28,14 @@ static u32 GetItemBallIdFromTemplate(u32 itemBallId)
 void GetItemBallIdAndAmountFromTemplate(void)
 {
     u32 itemBallId = (gSpecialVar_LastTalked - 1);
-    gSpecialVar_Result = GetItemBallIdFromTemplate(itemBallId);
+    enum Item itemId = GetItemBallIdFromTemplate(itemBallId);
+
+#if RANDOMIZATION_ENABLED == TRUE
+    itemId = GetRandomizedItem(itemId,
+                               (gSaveBlock1Ptr->location.mapGroup << 8) | gSaveBlock1Ptr->location.mapNum,
+                               itemBallId);
+#endif
+
+    gSpecialVar_Result = itemId;
     gSpecialVar_0x8009 = GetItemBallAmountFromTemplate(itemBallId);
 }
