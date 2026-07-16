@@ -482,6 +482,15 @@ u32 ScriptGiveMon(enum Species species, u8 level, enum Item item)
     struct Pokemon mon;
     u8 heldItem[2];
 
+#if RANDOMIZATION_ENABLED == TRUE
+    // Covers simple gift mons, including the starter (CB2_GiveStarter).
+    if (IsRandomizationEnabled(RANDOMIZATION_STATIC))
+    {
+        u32 mapId = (gSaveBlock1Ptr->location.mapGroup << 8) | gSaveBlock1Ptr->location.mapNum;
+        species = GetRandomizedStaticSpecies(species, mapId, 0);
+    }
+#endif
+
     CreateRandomMon(&mon, species, level);
     if (item)
     {

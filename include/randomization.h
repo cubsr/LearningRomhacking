@@ -28,6 +28,9 @@ typedef enum {
 // Initialize randomization system with trainer ID as seed
 void InitializeRandomization(u32 trainerId);
 
+// Store the pre-game menu's choices; applied by InitializeRandomization
+void Randomizer_SetPendingChoices(u8 flagsMask, u8 similarStats);
+
 // Set randomization flags (mask of RANDOMIZATION_FLAG_*)
 void SetRandomizationFlags(u8 flagsMask, u8 similarStats);
 

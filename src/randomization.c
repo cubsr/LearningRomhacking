@@ -10,22 +10,33 @@
 #include "constants/moves.h"
 #include "constants/species.h"
 
-// Special called by the new-game randomizer prompt script.
-// gSpecialVar_0x8004 holds the RANDOMIZATION_FLAG_* mask the player chose.
-void ApplyRandomizationChoices(void)
-{
 #if RANDOMIZATION_ENABLED == TRUE
-    SetRandomizationFlags(gSpecialVar_0x8004, RANDOMIZATION_DEFAULT_SIMILAR_STATS);
-#endif
-}
 
-#if RANDOMIZATION_ENABLED == TRUE
+// Choices made on the pre-game randomizer menu, held until the new save
+// is created (InitializeRandomization runs during NewGameInitData).
+static bool8 sPendingChoicesValid;
+static u8 sPendingFlags;
+static u8 sPendingSimilarStats;
+
+void Randomizer_SetPendingChoices(u8 flagsMask, u8 similarStats)
+{
+    sPendingChoicesValid = TRUE;
+    sPendingFlags = flagsMask;
+    sPendingSimilarStats = similarStats;
+}
 
 void InitializeRandomization(u32 trainerId)
 {
     gSaveBlock2Ptr->randomizationSeed = trainerId;
     gSaveBlock2Ptr->randomizationFlags = 0;
     gSaveBlock2Ptr->randomizationSimilarStats = RANDOMIZATION_DEFAULT_SIMILAR_STATS;
+
+    if (sPendingChoicesValid)
+    {
+        gSaveBlock2Ptr->randomizationFlags = sPendingFlags;
+        gSaveBlock2Ptr->randomizationSimilarStats = sPendingSimilarStats;
+        sPendingChoicesValid = FALSE;
+    }
 }
 
 void SetRandomizationFlags(u8 flagsMask, u8 similarStats)

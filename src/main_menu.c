@@ -13,6 +13,7 @@
 #include "international_string_util.h"
 #include "link.h"
 #include "main.h"
+#include "randomizer_menu.h"
 #include "main_menu.h"
 #include "menu.h"
 #include "list_menu.h"
@@ -226,6 +227,7 @@ static void Task_NewGameBirchSpeech_WaitForWhatsYourNameToPrint(u8);
 static void Task_NewGameBirchSpeech_WaitPressBeforeNameChoice(u8);
 static void Task_NewGameBirchSpeech_StartNamingScreen(u8);
 static void CB2_NewGameBirchSpeech_ReturnFromNamingScreen(void);
+void CB2_NewGameBirchSpeechFromRandomizerMenu(void);
 static void Task_NewGameBirchSpeech_CreateNameYesNo(u8);
 static void Task_NewGameBirchSpeech_ProcessNameYesNoMenu(u8);
 void CreateYesNoMenuParameterized(u8, u8, u16, u16, u8, u8);
@@ -1091,7 +1093,13 @@ static void Task_HandleMainMenuAPressed(u8 taskId)
 
             gPlttBufferUnfaded[0] = RGB_BLACK;
             gPlttBufferFaded[0] = RGB_BLACK;
+#if RANDOMIZATION_ENABLED == TRUE
+            gMain.savedCallback = CB2_NewGameBirchSpeechFromRandomizerMenu;
+            SetMainCallback2(CB2_InitRandomizerMenu);
+            DestroyTask(taskId);
+#else
             gTasks[taskId].func = Task_NewGameBirchSpeech_Init;
+#endif
             break;
         case ACTION_CONTINUE:
             gPlttBufferUnfaded[0] = RGB_BLACK;
@@ -1293,6 +1301,16 @@ static void HighlightSelectedMainMenuItem(enum PartyMenuType menuType, u8 select
 #define tLotadSpriteId data[9]
 #define tBrendanSpriteId data[10]
 #define tMaySpriteId data[11]
+
+// Entry point back from the pre-game randomizer menu: run the Birch
+// intro under the main menu's task loop.
+void CB2_NewGameBirchSpeechFromRandomizerMenu(void)
+{
+    ResetTasks();
+    SetVBlankCallback(VBlankCB_MainMenu);
+    CreateTask(Task_NewGameBirchSpeech_Init, 0);
+    SetMainCallback2(CB2_MainMenu);
+}
 
 static void Task_NewGameBirchSpeech_Init(u8 taskId)
 {
