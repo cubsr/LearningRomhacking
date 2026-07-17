@@ -2086,6 +2086,22 @@ const struct ItemInfo gItemsInfo[] =
         .iconPalette = gItemIconPalette_FullRestore,
     },
 
+    [ITEM_REPEL_CHARM] =
+    {
+        .name = ITEM_NAME("Repel Charm"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "Wards off weak wild\n"
+            "Pokémon while active.\n"
+            "Use again to disable."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_FIELD,
+        .fieldUseFunc = ItemUseOutOfBattle_RepelCharm,
+        .iconPic = gItemIcon_Repel,
+        .iconPalette = gItemIconPalette_Repel,
+    },
+
     [ITEM_EXP_CANDY_XS] =
     {
         .name = ITEM_NAME("Exp. Candy XS"),

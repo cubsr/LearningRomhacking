@@ -320,10 +320,16 @@ PlayersHouse_1F_EventScript_DontPushYourselfTooHard::
 @ Key item can't be tossed, so owning it doubles as the "already given" flag.
 PlayersHouse_1F_EventScript_CheckGiveRemedy::
 	checkitem ITEM_MOMS_REMEDY
-	goto_if_eq VAR_RESULT, TRUE, PlayersHouse_1F_EventScript_MomDialogue
+	goto_if_eq VAR_RESULT, TRUE, PlayersHouse_1F_EventScript_CheckGiveRepelCharm
 	msgbox PlayersHouse_1F_Text_YoullNeedThisRemedy, MSGBOX_DEFAULT
 	giveitem ITEM_MOMS_REMEDY
 	msgbox PlayersHouse_1F_Text_RemedyExplanation, MSGBOX_DEFAULT
+PlayersHouse_1F_EventScript_CheckGiveRepelCharm::
+	checkitem ITEM_REPEL_CHARM
+	goto_if_eq VAR_RESULT, TRUE, PlayersHouse_1F_EventScript_MomDialogue
+	msgbox PlayersHouse_1F_Text_TakeRepelCharmToo, MSGBOX_DEFAULT
+	giveitem ITEM_REPEL_CHARM
+	msgbox PlayersHouse_1F_Text_RepelCharmExplanation, MSGBOX_DEFAULT
 	release
 	end
 
@@ -341,6 +347,15 @@ PlayersHouse_1F_Text_RemedyExplanation:
 	.string "But listen, honey…\n"
 	.string "Even my remedy can't help a\l"
 	.string "POKéMON that has already fainted.$"
+
+PlayersHouse_1F_Text_TakeRepelCharmToo:
+	.string "MOM: Oh, and take this too!$"
+
+PlayersHouse_1F_Text_RepelCharmExplanation:
+	.string "MOM: While it's active, weak wild\n"
+	.string "POKéMON will leave you alone.\p"
+	.string "Use it again whenever you want\n"
+	.string "them back, honey.$"
 
 PlayersHouse_1F_EventScript_TryRegisterMom::
 	goto_if_set FLAG_ENABLE_MOM_MATCH_CALL, PlayersHouse_1F_EventScript_CheckGiveAmuletCoin

@@ -796,6 +796,32 @@ void ItemUseOutOfBattle_MomsRemedy(u8 taskId)
         DisplayItemMessageOnField(taskId, sText_MomsRemedyUsed, Task_CloseCantUseKeyItemMessage);
 }
 
+// Toggles a permanent repel effect (same rules as Repel: wild Pokémon
+// weaker than the party's first member won't appear).
+void ItemUseOutOfBattle_RepelCharm(u8 taskId)
+{
+    static const u8 sText_RepelCharmOn[] = _("The REPEL CHARM is active!\nWeak wild POKéMON will stay away.");
+    static const u8 sText_RepelCharmOff[] = _("The REPEL CHARM was put away.\nWild POKéMON will appear again.");
+    const u8 *msg;
+
+    if (FlagGet(FLAG_PERMANENT_REPEL))
+    {
+        FlagClear(FLAG_PERMANENT_REPEL);
+        msg = sText_RepelCharmOff;
+    }
+    else
+    {
+        FlagSet(FLAG_PERMANENT_REPEL);
+        msg = sText_RepelCharmOn;
+    }
+    PlaySE(SE_REPEL);
+
+    if (!gTasks[taskId].tUsingRegisteredKeyItem)
+        DisplayItemMessage(taskId, FONT_NORMAL, msg, CloseItemMessage);
+    else
+        DisplayItemMessageOnField(taskId, msg, Task_CloseCantUseKeyItemMessage);
+}
+
 void ItemUseOutOfBattle_PowderJar(u8 taskId)
 {
     ConvertIntToDecimalStringN(gStringVar1, GetBerryPowder(), STR_CONV_MODE_LEFT_ALIGN, 5);

@@ -1055,6 +1055,7 @@ enum __attribute__((packed)) Item
     // Custom items
     ITEM_LEVEL_UP = 874,
     ITEM_MOMS_REMEDY = 875,
+    ITEM_REPEL_CHARM = 876,
 
     ITEMS_COUNT,
     ITEM_FIELD_ARROW = ITEMS_COUNT,
