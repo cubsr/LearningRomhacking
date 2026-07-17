@@ -19,6 +19,8 @@ void CoopOverworld_Update(void)
         return;
     }
 
+    Coop_CheckIncomingBattleReq();
+
     p = Coop_GetPartnerStatus();
     if (!p->valid
      || p->framesSinceUpdate > PARTNER_STALE_FRAMES

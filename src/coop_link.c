@@ -35,6 +35,17 @@ static EWRAM_DATA struct
     u16 seq;
     u32 nonce;
     struct CoopPartnerStatus partner;
+
+    // One-shot outgoing command (takes priority over the presence beat)
+    u16 queuedCmd[3];
+    bool8 cmdQueued;
+
+    // Co-op battle negotiation mailbox
+    bool8 reqPending;       // partner asked us to join a battle
+    u16 reqTrainerId;
+    bool8 ackReceived;      // partner accepted our request
+    bool8 busyReceived;     // partner declined our request
+    bool8 inCoopBattle;
 } sCoop = {0};
 
 static void Task_CoopLinkup(u8 taskId);
@@ -239,6 +250,14 @@ static u8 Coop_GetLocalActivity(void)
     return COOP_ACTIVITY_ROAMING;
 }
 
+void Coop_QueueCommand(u16 op, u16 a, u16 b)
+{
+    sCoop.queuedCmd[0] = op;
+    sCoop.queuedCmd[1] = a;
+    sCoop.queuedCmd[2] = b;
+    sCoop.cmdQueued = TRUE;
+}
+
 // Called once per frame from LinkMain2 after link callbacks have had
 // their chance to claim gSendCmd.
 void CoopLink_BuildCmd(void)
@@ -251,6 +270,16 @@ void CoopLink_BuildCmd(void)
 
     if (gSendCmd[0] != 0)
         return;
+
+    if (sCoop.cmdQueued)
+    {
+        gSendCmd[0] = sCoop.queuedCmd[0];
+        gSendCmd[1] = sCoop.queuedCmd[1];
+        gSendCmd[2] = sCoop.queuedCmd[2];
+        sCoop.cmdQueued = FALSE;
+        return;
+    }
+
     if ((++sCoop.txTimer & 3) != 0)
         return;
 
@@ -280,12 +309,149 @@ void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
         sCoop.partner.lastSeq = cmd[5];
         sCoop.partner.framesSinceUpdate = 0;
         break;
+    case LINKCMD_COOP_BATTLE_REQ:
+        DebugPrintf("coop: battle request trainer=%d", cmd[1]);
+        sCoop.reqPending = TRUE;
+        sCoop.reqTrainerId = cmd[1];
+        break;
+    case LINKCMD_COOP_BATTLE_ACK:
+        sCoop.ackReceived = TRUE;
+        break;
+    case LINKCMD_COOP_BATTLE_BUSY:
+        sCoop.busyReceived = TRUE;
+        break;
     case LINKCMD_COOP_BYE:
         DebugPrintf("coop: partner left");
         sCoop.partner.valid = FALSE;
         sCoop.state = COOP_STATE_ERROR;
         break;
     }
+}
+
+// --- Co-op battle support -----------------------------------------------
+
+bool32 Coop_TakeIncomingBattleReq(u16 *trainerId)
+{
+    if (!sCoop.reqPending)
+        return FALSE;
+    sCoop.reqPending = FALSE;
+    *trainerId = sCoop.reqTrainerId;
+    return TRUE;
+}
+
+// 0 = no answer yet, 1 = accepted, 2 = declined
+u32 Coop_GetBattleReqAnswer(void)
+{
+    if (sCoop.ackReceived)
+        return 1;
+    if (sCoop.busyReceived)
+        return 2;
+    return 0;
+}
+
+void Coop_ClearBattleNegotiation(void)
+{
+    sCoop.reqPending = FALSE;
+    sCoop.ackReceived = FALSE;
+    sCoop.busyReceived = FALSE;
+}
+
+void Coop_SetInCoopBattle(bool32 inBattle)
+{
+    sCoop.inCoopBattle = inBattle;
+}
+
+bool32 Coop_InCoopBattle(void)
+{
+    return sCoop.inCoopBattle;
+}
+
+// Seed used to randomize the enemy trainer's party slot. In a co-op
+// battle the first half of the team comes from the host's world and the
+// rest from the guest's, and both games agree on the halves.
+u32 Coop_GetTrainerSlotSeed(u32 slot, u32 monsCount)
+{
+    u32 hostSeed, guestSeed;
+
+    if (!sCoop.inCoopBattle)
+        return gSaveBlock2Ptr->randomizationSeed;
+
+    if (Coop_IsHost())
+    {
+        hostSeed = gSaveBlock2Ptr->randomizationSeed;
+        guestSeed = sCoop.partner.seed;
+    }
+    else
+    {
+        hostSeed = sCoop.partner.seed;
+        guestSeed = gSaveBlock2Ptr->randomizationSeed;
+    }
+    return (slot < (monsCount + 1) / 2) ? hostSeed : guestSeed;
+}
+
+u32 Coop_GetHostSeed(void)
+{
+    return Coop_IsHost() ? gSaveBlock2Ptr->randomizationSeed : sCoop.partner.seed;
+}
+
+// Physical link comes back after a battle closed it; the logical session
+// carried on the whole time.
+static void Task_CoopReestablish(u8 taskId)
+{
+    s16 *data = gTasks[taskId].data;
+
+    switch (data[0])
+    {
+    case 0:
+        gLinkType = LINKTYPE_COOP;
+        OpenLink();
+        ResetLinkPlayers();
+        data[1] = 0;
+        data[0] = 1;
+        break;
+    case 1:
+        if (++data[1] > 10)
+            data[0] = 2;
+        break;
+    case 2:
+        if (GetLinkPlayerCount_2() >= 2)
+        {
+            if (IsLinkMaster() == TRUE)
+                CheckShouldAdvanceLinkState();
+            data[1] = 0;
+            data[0] = 3;
+        }
+        else if (++data[1] > 1800)
+        {
+            DebugPrintf("coop: reestablish timed out");
+            Coop_OnLinkError();
+            CloseLink();
+            DestroyTask(taskId);
+        }
+        break;
+    case 3:
+        if (gReceivedRemoteLinkPlayers == TRUE)
+        {
+            DebugPrintf("coop: link reestablished");
+            DestroyTask(taskId);
+        }
+        else if (++data[1] > 1800)
+        {
+            DebugPrintf("coop: reestablish timed out");
+            Coop_OnLinkError();
+            CloseLink();
+            DestroyTask(taskId);
+        }
+        break;
+    }
+}
+
+void Coop_StartReestablish(void)
+{
+    if (sCoop.state != COOP_STATE_ACTIVE)
+        return;
+    if (FindTaskIdByFunc(Task_CoopReestablish) == TASK_NONE)
+        CreateTask(Task_CoopReestablish, 80);
 }
 
 // Returns TRUE if the error belongs to a co-op session; the caller then

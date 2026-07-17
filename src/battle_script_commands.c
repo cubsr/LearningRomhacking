@@ -3820,6 +3820,8 @@ static bool32 BattleTypeAllowsExp(void)
 {
     if (RECORDED_WILD_BATTLE)
         return TRUE;
+    else if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+        return TRUE;
     else if (gBattleTypeFlags &
               ( BATTLE_TYPE_LINK
               | BATTLE_TYPE_RECORDED_LINK

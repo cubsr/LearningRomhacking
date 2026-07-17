@@ -46,6 +46,7 @@
 #include "pokerus.h"
 #include "random.h"
 #include "randomization.h"
+#include "coop_link.h"
 #include "recorded_battle.h"
 #include "roamer.h"
 #include "safari_zone.h"
@@ -584,7 +585,7 @@ static void CB2_InitBattleInternal(void)
     SetUpBattleVarsAndBirchZigzagoon();
 
     if (gBattleTypeFlags & BATTLE_TYPE_MULTI
-     && (TESTING || gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_INGAME_PARTNER)))
+     && (TESTING || gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_COOP)))
         SetMainCallback2(CB2_HandleStartMultiPartnerBattle);
     else if (gBattleTypeFlags & BATTLE_TYPE_MULTI)
         SetMainCallback2(CB2_HandleStartMultiBattle);
@@ -593,7 +594,8 @@ static void CB2_InitBattleInternal(void)
 
     if (!DEBUG_OVERWORLD_MENU || (DEBUG_OVERWORLD_MENU && !gIsDebugBattle))
     {
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED)))
+        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED))
+         || (gBattleTypeFlags & BATTLE_TYPE_COOP))
         {
             CreateNPCTrainerParty(&gParties[B_TRAINER_OPPONENT_A][0], TRAINER_BATTLE_PARAM.opponentA);
             if (gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS && !BATTLE_TWO_VS_ONE_OPPONENT)
@@ -1117,12 +1119,22 @@ static void CB2_HandleStartMultiPartnerBattle(void)
                 gLinkPlayers[1].id = 2;
                 gLinkPlayers[2].id = 1;
                 gLinkPlayers[3].id = 3;
-                GetFrontierTrainerName(gLinkPlayers[2].name, TRAINER_BATTLE_PARAM.opponentA);
-                GetFrontierTrainerName(gLinkPlayers[3].name, TRAINER_BATTLE_PARAM.opponentB);
-                GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentA);
-                gLinkPlayers[2].language = language;
-                GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentB);
-                gLinkPlayers[3].language = language;
+                if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+                {
+                    StringCopy_Nickname(gLinkPlayers[2].name, GetTrainerNameFromId(TRAINER_BATTLE_PARAM.opponentA));
+                    StringCopy_Nickname(gLinkPlayers[3].name, GetTrainerNameFromId(TRAINER_BATTLE_PARAM.opponentA));
+                    gLinkPlayers[2].language = GAME_LANGUAGE;
+                    gLinkPlayers[3].language = GAME_LANGUAGE;
+                }
+                else
+                {
+                    GetFrontierTrainerName(gLinkPlayers[2].name, TRAINER_BATTLE_PARAM.opponentA);
+                    GetFrontierTrainerName(gLinkPlayers[3].name, TRAINER_BATTLE_PARAM.opponentB);
+                    GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentA);
+                    gLinkPlayers[2].language = language;
+                    GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentB);
+                    gLinkPlayers[3].language = language;
+                }
 
                 if (IsLinkTaskFinished())
                 {
@@ -1391,7 +1403,7 @@ static void CB2_PreInitMultiBattle(void)
     u32 *savedBattleTypeFlags;
     void (**savedCallback)(void);
 
-    if (gBattleTypeFlags & BATTLE_TYPE_BATTLE_TOWER)
+    if (gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_COOP))
     {
         numPlayers = 2;
         blockMask = 3;
@@ -1903,7 +1915,7 @@ u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer 
 
 #if RANDOMIZATION_ENABLED == TRUE
             if (IsRandomizationEnabled(RANDOMIZATION_TRAINERS))
-                species = GetRandomizedTrainerMonSpecies(gSaveBlock2Ptr->randomizationSeed, species, sRandomizerTrainerNum, i);
+                species = GetRandomizedTrainerMonSpecies(Coop_GetTrainerSlotSeed(i, monsCount), species, sRandomizerTrainerNum, i);
 #endif
 
             if (trainer->battleType != TRAINER_BATTLE_TYPE_SINGLES)

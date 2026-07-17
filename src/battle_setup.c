@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "load_save.h"
 #include "battle_setup.h"
+#include "coop_link.h"
 #include "battle_tower.h"
 #include "battle_transition.h"
 #include "main.h"
@@ -451,6 +452,12 @@ static void DoTrainerBattle(void)
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_TRAINER_BATTLES);
     TryUpdateGymLeaderRematchFromTrainer();
+}
+
+// Solo-battle fallback for the co-op invite flow (coop_battle.c).
+void BattleSetup_LaunchTrainerBattle(void)
+{
+    DoTrainerBattle();
 }
 
 static void DoBattlePyramidTrainerHillBattle(void)
@@ -1378,7 +1385,7 @@ void BattleSetup_StartTrainerBattle(void)
 
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE || InTrainerHillChallenge())
         DoBattlePyramidTrainerHillBattle();
-    else
+    else if (!Coop_TryStartCoopTrainerBattle())
         DoTrainerBattle();
 
     ScriptContext_Stop();
@@ -1437,6 +1444,7 @@ static void HandleBattleVariantEndParty(void)
 
 static void CB2_EndTrainerBattle(void)
 {
+    Coop_OnTrainerBattleEnd();
     HandleBattleVariantEndParty();
 
     gIsDebugBattle = FALSE;

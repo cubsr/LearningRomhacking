@@ -51,6 +51,22 @@ void CoopLink_BuildCmd(void);                          // LinkMain2, once per fr
 void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId); // ProcessRecvCmds
 bool32 Coop_OnLinkError(void);                         // TrySetLinkErrorBuffer; TRUE = suppress error screen
 
+// Battle negotiation / co-op battle support
+void Coop_QueueCommand(u16 op, u16 a, u16 b);
+bool32 Coop_TakeIncomingBattleReq(u16 *trainerId);
+u32 Coop_GetBattleReqAnswer(void); // 0 pending, 1 accepted, 2 declined
+void Coop_ClearBattleNegotiation(void);
+void Coop_SetInCoopBattle(bool32 inBattle);
+bool32 Coop_InCoopBattle(void);
+u32 Coop_GetTrainerSlotSeed(u32 slot, u32 monsCount);
+u32 Coop_GetHostSeed(void);
+void Coop_StartReestablish(void);
+
+// coop_battle.c
+bool32 Coop_TryStartCoopTrainerBattle(void); // from BattleSetup_StartTrainerBattle
+void Coop_CheckIncomingBattleReq(void);      // from CoopOverworld_Update
+void Coop_OnTrainerBattleEnd(void);          // from CB2_EndTrainerBattle / guest return
+
 // coop_overworld.c: partner avatar, called from CB1_Overworld
 void CoopOverworld_Update(void);
 

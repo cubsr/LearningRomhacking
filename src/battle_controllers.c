@@ -205,7 +205,7 @@ static void InitBtlControllersInternal(void)
     else
         gBattlersCount = MAX_BATTLERS_COUNT;
 
-    if ((gBattleTypeFlags & BATTLE_TYPE_BATTLE_TOWER)
+    if ((gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_COOP))
         || !isMulti
         || (TESTING && isMulti)
         || (!isLink && !isRecorded)
@@ -661,7 +661,7 @@ static void Task_HandleSendLinkBuffersData(u8 taskId)
         }
         else
         {
-            if (gBattleTypeFlags & BATTLE_TYPE_BATTLE_TOWER)
+            if (gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_COOP))
                 numPlayers = 2;
             else
                 numPlayers = (gBattleTypeFlags & BATTLE_TYPE_MULTI) ? 4 : 2;
