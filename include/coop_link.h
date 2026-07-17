@@ -51,4 +51,13 @@ void CoopLink_BuildCmd(void);                          // LinkMain2, once per fr
 void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId); // ProcessRecvCmds
 bool32 Coop_OnLinkError(void);                         // TrySetLinkErrorBuffer; TRUE = suppress error screen
 
+// coop_overworld.c: partner avatar, called from CB1_Overworld
+void CoopOverworld_Update(void);
+
+// overworld.c: avatar rendering primitives (coords are saveblock map coords)
+bool32 CoopAvatar_IsActive(void);
+void CoopAvatar_Spawn(s16 x, s16 y, u8 gender);
+void CoopAvatar_Despawn(void);
+u32 CoopAvatar_Update(s16 x, s16 y, u8 facingDir);
+
 #endif // GUARD_COOP_LINK_H

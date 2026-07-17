@@ -6,6 +6,7 @@
 #include "berry.h"
 #include "bg.h"
 #include "cable_club.h"
+#include "coop_link.h"
 #include "credits_frlg.h"
 #include "clock.h"
 #include "dexnav.h"
@@ -1670,7 +1671,10 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
 void CB1_Overworld(void)
 {
     if (gMain.callback2 == CB2_Overworld)
+    {
         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+        CoopOverworld_Update();
+    }
 }
 
 #define TINT_NIGHT Q_8_8(0.456) | Q_8_8(0.456) << 8 | Q_8_8(0.615) << 16
@@ -3516,6 +3520,81 @@ static void SetPlayerFacingDirection(u8 linkPlayerId, u8 facing)
     }
 }
 
+
+// ---- Co-op partner avatar ----------------------------------------------
+// Rendering primitive for the free-roam co-op partner (driven from
+// coop_overworld.c). Reuses the cable-club link player object machinery
+// with a dedicated slot; no lock-step, just "step toward the last
+// reported tile".
+
+#define COOP_AVATAR_LINK_SLOT 3
+
+bool32 CoopAvatar_IsActive(void)
+{
+    struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[COOP_AVATAR_LINK_SLOT];
+    struct ObjectEvent *obj;
+
+    if (!lp->active)
+        return FALSE;
+    obj = &gObjectEvents[lp->objEventId];
+    // Map loads wipe object events while this bookkeeping survives.
+    if (!obj->active || obj->localId != OBJ_EVENT_ID_DYNAMIC_BASE + COOP_AVATAR_LINK_SLOT)
+    {
+        lp->active = FALSE;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void CoopAvatar_Spawn(s16 x, s16 y, u8 gender)
+{
+    SpawnLinkPlayerObjectEvent(COOP_AVATAR_LINK_SLOT, x + MAP_OFFSET, y + MAP_OFFSET, gender);
+    CreateLinkPlayerSprite(COOP_AVATAR_LINK_SLOT, VERSION_EMERALD);
+}
+
+void CoopAvatar_Despawn(void)
+{
+    if (CoopAvatar_IsActive())
+        DestroyLinkPlayerObject(COOP_AVATAR_LINK_SLOT);
+    gLinkPlayerObjectEvents[COOP_AVATAR_LINK_SLOT].active = FALSE;
+}
+
+// Advance the avatar one frame toward (x, y) in saveblock (unoffset) map
+// coords; returns the remaining tile distance so the caller can decide
+// to snap when too far behind.
+u32 CoopAvatar_Update(s16 x, s16 y, u8 facingDir)
+{
+    struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[COOP_AVATAR_LINK_SLOT];
+    struct ObjectEvent *obj = &gObjectEvents[lp->objEventId];
+    s16 dx = (x + MAP_OFFSET) - obj->currentCoords.x;
+    s16 dy = (y + MAP_OFFSET) - obj->currentCoords.y;
+    u8 facing;
+
+    if (lp->movementMode == MOVEMENT_MODE_FROZEN)
+        facing = FACING_NONE; // mid-step; the call below advances the walk
+    else if (dy < 0)
+        facing = FACING_UP;
+    else if (dy > 0)
+        facing = FACING_DOWN;
+    else if (dx < 0)
+        facing = FACING_LEFT;
+    else if (dx > 0)
+        facing = FACING_RIGHT;
+    else
+    {
+        switch (facingDir)
+        {
+        case DIR_NORTH: facing = FACING_FORCED_UP;    break;
+        case DIR_SOUTH: facing = FACING_FORCED_DOWN;  break;
+        case DIR_WEST:  facing = FACING_FORCED_LEFT;  break;
+        case DIR_EAST:  facing = FACING_FORCED_RIGHT; break;
+        default:        facing = FACING_NONE;         break;
+        }
+    }
+
+    SetPlayerFacingDirection(COOP_AVATAR_LINK_SLOT, facing);
+    return abs(dx) + abs(dy);
+}
 
 static u8 MovementEventModeCB_Normal(struct LinkPlayerObjectEvent *linkPlayerObjEvent, struct ObjectEvent *objEvent, enum Direction dir)
 {
