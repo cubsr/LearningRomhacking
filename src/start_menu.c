@@ -5,6 +5,7 @@
 #include "battle_pyramid_bag.h"
 #include "bg.h"
 #include "debug.h"
+#include "coop_link.h"
 #include "event_data.h"
 #include "event_object_movement.h"
 #include "event_object_lock.h"
@@ -940,10 +941,34 @@ static bool8 BattlePyramidRetireCallback(void)
     return FALSE;
 }
 
+static u8 SaveCoopBlockedMessageCallback(void)
+{
+    if (JOY_NEW(A_BUTTON) || JOY_NEW(B_BUTTON))
+    {
+        HideSaveMessageWindow();
+        return SAVE_CANCELED;
+    }
+    return SAVE_IN_PROGRESS;
+}
+
+static u8 SaveCoopBlockedCallback(void)
+{
+    static const u8 sText_CantSaveDuringCoop[] =
+        _("The game can't be saved during\na co-op session!");
+
+    ShowSaveMessage(sText_CantSaveDuringCoop, SaveCoopBlockedMessageCallback);
+    return SAVE_IN_PROGRESS;
+}
+
 static void InitSave(void)
 {
     SaveMapView();
-    sSaveDialogCallback = SaveConfirmSaveCallback;
+    // Flash writes stall the main loop long enough to overrun the link
+    // queues, killing the co-op session - refuse instead.
+    if (CoopSession_IsActive())
+        sSaveDialogCallback = SaveCoopBlockedCallback;
+    else
+        sSaveDialogCallback = SaveConfirmSaveCallback;
     sSavingComplete = FALSE;
 }
 
