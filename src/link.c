@@ -24,6 +24,7 @@
 #include "trade.h"
 #include "battle.h"
 #include "link.h"
+#include "coop_link.h"
 #include "link_rfu.h"
 #include "constants/rgb.h"
 #include "constants/trade.h"
@@ -482,6 +483,7 @@ u16 LinkMain2(const u16 *heldKeys)
         ProcessRecvCmds(SIO_MULTI_CNT->id);
         if (gLinkCallback != NULL)
             gLinkCallback();
+        CoopLink_BuildCmd();
         TrySetLinkErrorBuffer();
     }
     return gLinkStatus;
@@ -531,6 +533,10 @@ static void ProcessRecvCmds(u8 unused)
         }
         case LINKCMD_BLENDER_SEND_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
+            break;
+        case LINKCMD_COOP_PRESENCE:
+        case LINKCMD_COOP_BYE:
+            CoopLink_HandleRecvCmd(gRecvCmds[i], i);
             break;
         case LINKCMD_DUMMY_1:
             break;
@@ -1514,6 +1520,14 @@ static void TrySetLinkErrorBuffer(void)
     // Check if a link error has occurred
     if (sLinkOpen && EXTRACT_LINK_ERRORS(gLinkStatus))
     {
+        // Co-op sessions absorb link errors instead of showing the
+        // error screen; the session just ends.
+        if (Coop_OnLinkError())
+        {
+            gLinkErrorOccurred = TRUE;
+            CloseLink();
+            return;
+        }
         // Link error has occurred, handle message details if
         // necessary, then stop the link.
         if (!gSuppressLinkErrorMessage)

@@ -4,6 +4,7 @@
 #include "berry.h"
 #include "clock.h"
 #include "coins.h"
+#include "coop_link.h"
 #include "credits.h"
 #include "credits_frlg.h"
 #include "data.h"
@@ -278,6 +279,8 @@ static void DebugAction_Util_Weather(u8 taskId);
 static void DebugAction_Util_Weather_SelectId(u8 taskId);
 static void DebugAction_Util_WatchCredits(u8 taskId);
 static void DebugAction_Util_CheatStart(u8 taskId);
+static void DebugAction_Util_CoopStart(u8 taskId);
+static void DebugAction_Util_CoopStatus(u8 taskId);
 
 static void DebugAction_TimeMenu_ChangeTimeOfDay(u8 taskId);
 static void DebugAction_TimeMenu_ChangeWeekdays(u8 taskId);
@@ -586,6 +589,8 @@ static const struct DebugMenuOption sDebugMenu_Actions_Utilities[] =
     { COMPOUND_STRING("Time Functions…"),   DebugAction_OpenSubMenu, sDebugMenu_Actions_TimeMenu, },
     { COMPOUND_STRING("Watch credits…"),    DebugAction_Util_WatchCredits },
     { COMPOUND_STRING("Cheat start"),       DebugAction_Util_CheatStart },
+    { COMPOUND_STRING("Co-op: start link"), DebugAction_Util_CoopStart },
+    { COMPOUND_STRING("Co-op: status"),     DebugAction_Util_CoopStatus },
     { COMPOUND_STRING("Berry Functions…"),  DebugAction_OpenSubMenu, sDebugMenu_Actions_BerryFunctions },
     { COMPOUND_STRING("EWRAM Counters…"),   DebugAction_ExecuteScript, Debug_EventScript_EWRAMCounters },
     { COMPOUND_STRING("Follower NPC…"),     DebugAction_OpenSubMenu, sDebugMenu_Actions_FollowerNPCMenu },
@@ -1739,6 +1744,22 @@ static void DebugAction_Player_Id(u8 taskId)
     SetTrainerId(trainerId, gSaveBlock2Ptr->playerTrainerId);
     Debug_DestroyMenu_Full(taskId);
     ScriptContext_Enable();
+}
+
+static void DebugAction_Util_CoopStart(u8 taskId)
+{
+    Debug_DestroyMenu_Full(taskId);
+    Coop_StartSession();
+}
+
+static void DebugAction_Util_CoopStatus(u8 taskId)
+{
+    const struct CoopPartnerStatus *p = Coop_GetPartnerStatus();
+
+    DebugPrintf("coop: state=%d host=%d partnerValid=%d map=%d.%d pos=(%d,%d) age=%d seed=%08x",
+                Coop_GetSessionState(), Coop_IsHost(), p->valid,
+                p->mapGroup, p->mapNum, p->x, p->y, p->framesSinceUpdate, p->seed);
+    Debug_DestroyMenu_Full(taskId);
 }
 
 static void DebugAction_Util_CheatStart(u8 taskId)

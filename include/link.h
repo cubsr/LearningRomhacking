@@ -73,6 +73,8 @@
 #define LINKCMD_INIT_BLOCK              0xBBBB
 #define LINKCMD_READY_CANCEL_TRADE      0xBBCC
 #define LINKCMD_SEND_HELD_KEYS          0xCAFE
+#define LINKCMD_COOP_PRESENCE           0x3C01
+#define LINKCMD_COOP_BYE                0x3C07
 #define LINKCMD_SEND_BLOCK_REQ          0xCCCC
 #define LINKCMD_START_TRADE             0xCCDD
 #define LINKCMD_CONFIRM_FINISH_TRADE    0xDCBA
@@ -104,6 +106,7 @@
 #define LINKTYPE_EREADER_EM            0x5503
 #define LINKTYPE_CONTEST_GMODE         0x6601
 #define LINKTYPE_CONTEST_EMODE         0x6602
+#define LINKTYPE_COOP                  0x7701
 
 enum {
     BLOCK_REQ_SIZE_NONE, // Identical to 200
