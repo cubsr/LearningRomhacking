@@ -15,6 +15,7 @@
 #include "sprite.h"
 #include "starter_choose.h"
 #include "strings.h"
+#include "randomization.h"
 #include "task.h"
 #include "text.h"
 #include "text_window.h"
@@ -351,6 +352,13 @@ u16 GetStarterPokemon(u16 chosenStarterId)
 {
     if (chosenStarterId > STARTER_MON_COUNT)
         chosenStarterId = 0;
+#if RANDOMIZATION_ENABLED == TRUE
+    // Remap here so the selection screen, the gifted mon, and later
+    // references (credits, Birch's rating) all agree on the species.
+    if (IsRandomizationEnabled(RANDOMIZATION_STATIC))
+        return GetRandomizedSpeciesWithSeed(gSaveBlock2Ptr->randomizationSeed,
+                                            sStarterMon[chosenStarterId], 0x57A87, chosenStarterId);
+#endif
     return sStarterMon[chosenStarterId];
 }
 
