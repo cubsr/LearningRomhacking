@@ -61,10 +61,18 @@ const struct CoopPartnerStatus *Coop_GetPartnerStatus(void)
 
 void Coop_StartSession(void)
 {
-    if (sCoop.state != COOP_STATE_IDLE && sCoop.state != COOP_STATE_ERROR)
+    u8 oldTask;
+
+    if (sCoop.state == COOP_STATE_ACTIVE)
         return;
-    if (FindTaskIdByFunc(Task_CoopLinkup) != TASK_NONE)
-        return;
+
+    // Restart cleanly if a previous attempt is wedged.
+    oldTask = FindTaskIdByFunc(Task_CoopLinkup);
+    if (oldTask != TASK_NONE)
+    {
+        DestroyTask(oldTask);
+        CloseLink();
+    }
 
     memset(&sCoop, 0, sizeof(sCoop));
     sCoop.state = COOP_STATE_LINKING;
@@ -121,6 +129,11 @@ static void Task_CoopLinkup(u8 taskId)
             CoopLinkupFailed(taskId, "canceled");
             return;
         }
+        if (++tTimer > 60 * 30)
+        {
+            CoopLinkupFailed(taskId, "no partner");
+            return;
+        }
         if (GetLinkPlayerCount_2() >= 2)
         {
             SetSuppressLinkErrorMessage(TRUE);
@@ -142,7 +155,10 @@ static void Task_CoopLinkup(u8 taskId)
         tTimer = 0;
         tState = 4;
         break;
-    case 4: // player data exchange
+    case 4: // wait until both games have each other's player data.
+            // The vanilla exchange validator also compares link types,
+            // which is timing-sensitive; the hello block's magic below is
+            // our real compatibility check, so don't use it.
     {
         struct CoopHello *hello;
 
@@ -151,16 +167,14 @@ static void Task_CoopLinkup(u8 taskId)
             CoopLinkupFailed(taskId, "link error");
             return;
         }
-        switch (GetLinkPlayerDataExchangeStatusTimed(2, 2))
+        if (gReceivedRemoteLinkPlayers != TRUE)
         {
-        case EXCHANGE_COMPLETE:
-            break;
-        case EXCHANGE_TIMED_OUT:
-            return;
-        default:
-            CoopLinkupFailed(taskId, "exchange");
+            if (++tTimer > 900)
+                CoopLinkupFailed(taskId, "player data timeout");
             return;
         }
+        DebugPrintf("coop: players exchanged (linkTypes %04x/%04x)",
+                    gLinkPlayers[0].linkType, gLinkPlayers[1].linkType);
         gFieldLinkPlayerCount = GetLinkPlayerCount_2();
         gLocalLinkPlayerId = GetMultiplayerId();
         SaveLinkPlayers(gFieldLinkPlayerCount);
