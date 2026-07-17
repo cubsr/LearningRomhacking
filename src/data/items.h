@@ -2070,6 +2070,22 @@ const struct ItemInfo gItemsInfo[] =
         .iconPalette = gItemIconPalette_RareCandy,
     },
 
+    [ITEM_MOMS_REMEDY] =
+    {
+        .name = ITEM_NAME("Mom's Remedy"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "Mom's home remedy.\n"
+            "Fully heals all your\n"
+            "battle-ready Pokémon."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_FIELD,
+        .fieldUseFunc = ItemUseOutOfBattle_MomsRemedy,
+        .iconPic = gItemIcon_LargePotion,
+        .iconPalette = gItemIconPalette_FullRestore,
+    },
+
     [ITEM_EXP_CANDY_XS] =
     {
         .name = ITEM_NAME("Exp. Candy XS"),

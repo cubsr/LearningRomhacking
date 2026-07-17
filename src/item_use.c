@@ -772,6 +772,30 @@ void ItemUseOutOfBattle_CoinCase(u8 taskId)
     }
 }
 
+// Fully heals HP/PP/status of every conscious party member.
+// Fainted Pokémon stay fainted (nuzlocke rules).
+void ItemUseOutOfBattle_MomsRemedy(u8 taskId)
+{
+    static const u8 sText_MomsRemedyUsed[] = _("Your party was patched up with\nMOM's remedy!");
+    u32 i;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        struct Pokemon *mon = &gPlayerParty[i];
+
+        if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE
+         && !GetMonData(mon, MON_DATA_IS_EGG)
+         && GetMonData(mon, MON_DATA_HP) != 0)
+            HealPokemon(mon);
+    }
+    PlaySE(SE_USE_ITEM);
+
+    if (!gTasks[taskId].tUsingRegisteredKeyItem)
+        DisplayItemMessage(taskId, FONT_NORMAL, sText_MomsRemedyUsed, CloseItemMessage);
+    else
+        DisplayItemMessageOnField(taskId, sText_MomsRemedyUsed, Task_CloseCantUseKeyItemMessage);
+}
+
 void ItemUseOutOfBattle_PowderJar(u8 taskId)
 {
     ConvertIntToDecimalStringN(gStringVar1, GetBerryPowder(), STR_CONV_MODE_LEFT_ALIGN, 5);

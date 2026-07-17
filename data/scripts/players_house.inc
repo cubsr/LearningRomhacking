@@ -299,6 +299,8 @@ PlayersHouse_1F_Movement_MomReturnToSeatFemale:
 PlayersHouse_1F_EventScript_Mom::
 	lock
 	faceplayer
+	goto_if_set FLAG_RESCUED_BIRCH, PlayersHouse_1F_EventScript_CheckGiveRemedy
+PlayersHouse_1F_EventScript_MomDialogue::
 	goto_if_eq VAR_LITTLEROOT_HOUSES_STATE_MAY, 4, PlayersHouse_1F_EventScript_DontPushYourselfTooHard
 	goto_if_eq VAR_LITTLEROOT_HOUSES_STATE_BRENDAN, 4, PlayersHouse_1F_EventScript_DontPushYourselfTooHard
 	goto_if_set FLAG_HAS_MATCH_CALL, PlayersHouse_1F_EventScript_TryRegisterMom
@@ -313,6 +315,32 @@ PlayersHouse_1F_EventScript_DontPushYourselfTooHard::
 	msgbox PlayersHouse_1F_Text_DontPushYourselfTooHard, MSGBOX_DEFAULT
 	release
 	end
+
+@ One-time gift once the player has a Pokémon (FLAG_RESCUED_BIRCH).
+@ Key item can't be tossed, so owning it doubles as the "already given" flag.
+PlayersHouse_1F_EventScript_CheckGiveRemedy::
+	checkitem ITEM_MOMS_REMEDY
+	goto_if_eq VAR_RESULT, TRUE, PlayersHouse_1F_EventScript_MomDialogue
+	msgbox PlayersHouse_1F_Text_YoullNeedThisRemedy, MSGBOX_DEFAULT
+	giveitem ITEM_MOMS_REMEDY
+	msgbox PlayersHouse_1F_Text_RemedyExplanation, MSGBOX_DEFAULT
+	release
+	end
+
+PlayersHouse_1F_Text_YoullNeedThisRemedy:
+	.string "MOM: Oh, {PLAYER}! You have your\n"
+	.string "very own POKéMON now!\p"
+	.string "Then you should take this along.\n"
+	.string "It's my special home remedy!$"
+
+PlayersHouse_1F_Text_RemedyExplanation:
+	.string "MOM: Use it whenever your POKéMON\n"
+	.string "need a pick-me-up.\p"
+	.string "Register it to SELECT so it's\n"
+	.string "always in reach, okay?\p"
+	.string "But listen, honey…\n"
+	.string "Even my remedy can't help a\l"
+	.string "POKéMON that has already fainted.$"
 
 PlayersHouse_1F_EventScript_TryRegisterMom::
 	goto_if_set FLAG_ENABLE_MOM_MATCH_CALL, PlayersHouse_1F_EventScript_CheckGiveAmuletCoin
