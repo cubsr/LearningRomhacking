@@ -202,9 +202,12 @@ u16 GetRandomizedAbility(u16 ability, u16 species, u8 abilityNum)
 }
 
 // Learnable-move pools bucketed by type, built once on first use.
-static u16 sMovesByType[MOVES_COUNT];
-static u16 sTypeStart[NUMBER_OF_MON_TYPES + 1];
-static bool8 sMovePoolsInitialized;
+// EWRAM_DATA is load-bearing: plain statics go to IWRAM, and ~2KB there
+// starves the stack (the smol decompressor runs its inner loop from
+// on-stack buffers), overflowing into IWRAM globals.
+static EWRAM_DATA u16 sMovesByType[MOVES_COUNT] = {0};
+static EWRAM_DATA u16 sTypeStart[NUMBER_OF_MON_TYPES + 1] = {0};
+static EWRAM_DATA bool8 sMovePoolsInitialized = FALSE;
 
 static bool32 IsRandomMoveAllowed(u16 move)
 {
