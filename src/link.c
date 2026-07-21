@@ -534,6 +534,7 @@ static void ProcessRecvCmds(u8 unused)
         case LINKCMD_BLENDER_SEND_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
             break;
+        case LINKCMD_COOP_HELLO:
         case LINKCMD_COOP_PRESENCE:
         case LINKCMD_COOP_BYE:
             CoopLink_HandleRecvCmd(gRecvCmds[i], i);

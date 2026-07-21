@@ -15,17 +15,8 @@
 // auto-confirms once both games are connected. After the player-data
 // exchange, both sides swap a hello block (nonce + randomizer seed).
 
-#define COOP_HELLO_MAGIC 0x434F4F50 // "COOP"
-
-struct CoopHello
-{
-    u32 magic;
-    u32 nonce;
-    u32 seed;
-    u8 randoFlags;
-    u8 gender;
-    u8 padding[2];
-};
+// Bump when the packet layout changes so mismatched builds don't pair.
+#define COOP_PROTOCOL_VERSION 1
 
 static EWRAM_DATA struct
 {
@@ -46,6 +37,7 @@ static EWRAM_DATA struct
     bool8 ackReceived;      // partner accepted our request
     bool8 busyReceived;     // partner declined our request
     bool8 inCoopBattle;
+    bool8 helloPending;
     u32 checksumErrors;
 } sCoop = {0};
 
@@ -151,6 +143,12 @@ static void Task_CoopLinkup(u8 taskId)
         OpenLinkTimed();
         ResetLinkPlayerCount();
         ResetLinkPlayers();
+        // Drop the vanilla player-data exchange callback: co-op does its
+        // own identification, and leaving it armed would start a block
+        // transfer we neither need nor can rely on. It also keeps
+        // gReceivedRemoteLinkPlayers clear, so field code doesn't mistake
+        // the session for a cable club room.
+        gLinkCallback = NULL;
         tTimer = 0;
         tState = 1;
         break;
@@ -179,75 +177,46 @@ static void Task_CoopLinkup(u8 taskId)
     case 3: // settle, then the master advances the link state for everyone
         if (++tTimer < 30)
             break;
-        SaveLinkPlayers(GetLinkPlayerCount_2());
-        DebugPrintf("coop: handshake done, players=%d master=%d id=%d",
-                    GetLinkPlayerCount_2(), IsLinkMaster(), GetMultiplayerId());
-        if (IsLinkMaster() == TRUE)
+        DebugPrintf("coop: advancing link state, players=%d master=%d",
+                    GetLinkPlayerCount_2(), (gLinkStatus & LINK_STAT_MASTER) != 0);
+        if (gLinkStatus & LINK_STAT_MASTER)
             CheckShouldAdvanceLinkState();
         tTimer = 0;
         tState = 4;
         break;
-    case 4: // wait until both games have each other's player data.
-            // The vanilla exchange validator also compares link types,
-            // which is timing-sensitive; the hello block's magic below is
-            // our real compatibility check, so don't use it.
-    {
-        struct CoopHello *hello;
-
-        if (gReceivedRemoteLinkPlayers != TRUE)
+    case 4: // wait for the hardware connection, then identify ourselves
+            // from the link status directly. We deliberately do NOT use
+            // the vanilla player-data exchange: it rides the multi-frame
+            // block protocol, which the emulator's serial drift corrupts.
+        if (!(gLinkStatus & LINK_STAT_CONN_ESTABLISHED))
         {
             if (++tTimer > 900)
-                CoopLinkupFailed(taskId, "player data timeout");
+                CoopLinkupFailed(taskId, "no connection");
             return;
         }
-        DebugPrintf("coop: players exchanged (linkTypes %04x/%04x)",
-                    gLinkPlayers[0].linkType, gLinkPlayers[1].linkType);
-        gFieldLinkPlayerCount = GetLinkPlayerCount_2();
-        gLocalLinkPlayerId = GetMultiplayerId();
-        SaveLinkPlayers(gFieldLinkPlayerCount);
-        sCoop.localId = gLocalLinkPlayerId;
+        sCoop.localId = gLinkStatus & LINK_STAT_LOCAL_ID;
         sCoop.nonce = ((u32)Random() << 16) | Random();
-
-        hello = (struct CoopHello *)gBlockSendBuffer;
-        hello->magic = COOP_HELLO_MAGIC;
-        hello->nonce = sCoop.nonce;
-        hello->seed = gSaveBlock2Ptr->randomizationSeed;
-        hello->randoFlags = gSaveBlock2Ptr->randomizationFlags;
-        hello->gender = gSaveBlock2Ptr->playerGender;
-        if (IsLinkMaster() == TRUE)
-            SendBlockRequest(BLOCK_REQ_SIZE_100);
+        sCoop.helloPending = TRUE;
+        DebugPrintf("coop: connected as id=%d host=%d, saying hello",
+                    sCoop.localId, Coop_IsHost());
         tTimer = 0;
         tState = 5;
         break;
-    }
-    case 5: // wait for both hello blocks
-    {
-        const struct CoopHello *hello;
-        u8 partnerId;
-
-        if ((GetBlockReceivedStatus() & 3) != 3)
+    case 5: // trade hello packets on the raw command channel. These are
+            // single self-contained frames repeated until one lands, so a
+            // corrupted transfer costs nothing but a few frames.
+        if (!sCoop.partner.valid)
         {
-            if (++tTimer > 600)
+            if (++tTimer > 1800)
                 CoopLinkupFailed(taskId, "hello timeout");
             return;
         }
-        partnerId = sCoop.localId ^ 1;
-        hello = (const struct CoopHello *)gBlockRecvBuffer[partnerId];
-        if (hello->magic != COOP_HELLO_MAGIC)
-        {
-            CoopLinkupFailed(taskId, "bad hello");
-            return;
-        }
-        sCoop.partner.seed = hello->seed;
-        sCoop.partner.randoFlags = hello->randoFlags;
-        sCoop.partner.gender = hello->gender;
-        ResetBlockReceivedFlags();
+        sCoop.helloPending = FALSE;
         sCoop.state = COOP_STATE_ACTIVE;
         DebugPrintf("coop: ACTIVE id=%d host=%d partnerSeed=%08x",
                     sCoop.localId, Coop_IsHost(), sCoop.partner.seed);
         DestroyTask(taskId);
         break;
-    }
     }
 }
 
@@ -273,13 +242,31 @@ void Coop_QueueCommand(u16 op, u16 a, u16 b)
 // their chance to claim gSendCmd.
 void CoopLink_BuildCmd(void)
 {
-    if (sCoop.state != COOP_STATE_ACTIVE)
+    if (sCoop.state != COOP_STATE_ACTIVE && sCoop.state != COOP_STATE_LINKING)
         return;
 
     if (sCoop.partner.valid && sCoop.partner.framesSinceUpdate < 0xFFFF)
         sCoop.partner.framesSinceUpdate++;
 
     if (gSendCmd[0] != 0)
+        return;
+
+    // Repeat the hello until the partner's arrives; the reply doubles as
+    // the acknowledgement.
+    if (sCoop.helloPending)
+    {
+        if ((++sCoop.txTimer & 7) != 0)
+            return;
+        gSendCmd[0] = LINKCMD_COOP_HELLO;
+        gSendCmd[1] = COOP_PROTOCOL_VERSION;
+        gSendCmd[2] = gSaveBlock2Ptr->randomizationSeed;
+        gSendCmd[3] = gSaveBlock2Ptr->randomizationSeed >> 16;
+        gSendCmd[4] = gSaveBlock2Ptr->randomizationFlags | (gSaveBlock2Ptr->playerGender << 8);
+        gSendCmd[5] = sCoop.nonce;
+        return;
+    }
+
+    if (sCoop.state != COOP_STATE_ACTIVE)
         return;
 
     if (sCoop.cmdQueued)
@@ -304,11 +291,26 @@ void CoopLink_BuildCmd(void)
 
 void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
 {
-    if (sCoop.state != COOP_STATE_ACTIVE || playerId == sCoop.localId)
+    if (sCoop.state == COOP_STATE_IDLE || sCoop.state == COOP_STATE_ERROR)
+        return;
+    if (playerId == sCoop.localId)
         return;
 
     switch (cmd[0])
     {
+    case LINKCMD_COOP_HELLO:
+        if (cmd[1] != COOP_PROTOCOL_VERSION)
+        {
+            DebugPrintf("coop: partner protocol %d != %d, ignoring",
+                        cmd[1], COOP_PROTOCOL_VERSION);
+            return;
+        }
+        sCoop.partner.seed = cmd[2] | ((u32)cmd[3] << 16);
+        sCoop.partner.randoFlags = cmd[4] & 0xFF;
+        sCoop.partner.gender = cmd[4] >> 8;
+        sCoop.partner.valid = TRUE;
+        sCoop.partner.framesSinceUpdate = 0;
+        break;
     case LINKCMD_COOP_PRESENCE:
         sCoop.partner.valid = TRUE;
         sCoop.partner.mapGroup = cmd[1] >> 8;

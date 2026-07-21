@@ -73,6 +73,7 @@
 #define LINKCMD_INIT_BLOCK              0xBBBB
 #define LINKCMD_READY_CANCEL_TRADE      0xBBCC
 #define LINKCMD_SEND_HELD_KEYS          0xCAFE
+#define LINKCMD_COOP_HELLO              0x3C00
 #define LINKCMD_COOP_PRESENCE           0x3C01
 #define LINKCMD_COOP_BATTLE_REQ         0x3C02
 #define LINKCMD_COOP_BATTLE_ACK         0x3C03
