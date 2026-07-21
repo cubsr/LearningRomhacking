@@ -15,6 +15,7 @@
 #include "string_util.h"
 #include "strings.h"
 #include "text.h"
+#include "text_window.h"
 #include "window.h"
 #include "constants/battle.h"
 #include "constants/rgb.h"
@@ -48,11 +49,13 @@ enum
 
 #define HUD_ICON_TAG 0x2740
 
-// BG0 in the field uses charBaseIndex 2, which leaves tiles up to 0x3FF before
-// OBJ VRAM. 0x200-0x21C is the dialog/std window gfx and DexNav sits at 0x1D5,
-// so the HUD takes 0x230 upward (226 tiles).
-#define HUD_TILE_BASE           0x230
-#define HUD_PALETTE_NUM         STD_WINDOW_PALETTE_NUM
+// BG0 in the field uses charBaseIndex 2 (VRAM 0x8000) and BG2's tilemap sits at
+// screen block 28 (0xE000), so BG0 tile indices must stay under 0x300 - going
+// past that writes window pixels straight into the map layer. 0x200-0x21C is the
+// dialog/std window gfx, so the HUD gets 0x21D up to 0x300.
+#define HUD_TILE_BASE           0x21D
+#define HUD_TILE_LIMIT          0x300
+#define HUD_PALETTE_NUM         DLG_WINDOW_PALETTE_NUM
 
 #define COLUMN_LEFT_TILE        26
 #define COLUMN_WIDTH_TILES      4
@@ -60,7 +63,7 @@ enum
 #define COLUMN_TILES            (COLUMN_WIDTH_TILES * COLUMN_HEIGHT_TILES)
 
 #define PARTY_BAR_TOP_TILE      16
-#define PARTY_BAR_WIDTH_TILES   26
+#define PARTY_BAR_WIDTH_TILES   24
 #define PARTY_BAR_HEIGHT_TILES  4
 #define PARTY_BAR_TILES         (PARTY_BAR_WIDTH_TILES * PARTY_BAR_HEIGHT_TILES)
 
@@ -68,7 +71,7 @@ enum
 #define COUNTER_HEIGHT_TILES    2
 #define COUNTER_TILES           (COUNTER_WIDTH_TILES * COUNTER_HEIGHT_TILES)
 
-#define LABEL_WIDTH_TILES       13
+#define LABEL_WIDTH_TILES       12
 #define LABEL_HEIGHT_TILES      2
 
 // Icon column geometry, in screen pixels.
@@ -77,7 +80,7 @@ enum
 
 // Party bar geometry, in screen pixels.
 #define PARTY_SLOT_WIDTH        32
-#define PARTY_SLOT_FIRST_X      24
+#define PARTY_SLOT_FIRST_X      16
 #define PARTY_ICON_Y            144
 
 enum
@@ -89,7 +92,18 @@ enum
 static const u32 sHudIconsGfx[] = INCGFX_U32("graphics/interface/hud_icons.png", ".4bpp.smol");
 static const u16 sHudIconsPal[] = INCBIN_U16("graphics/interface/hud_icons.gbapal");
 
-static const u8 sHudTextColor[3] = { 1, 2, 3 };
+// The HUD owns BG palette 15 while it is open and hands it back to the message
+// box on the way out. Index 1 is the panel fill, 2 the outline/text ink, 3 the
+// selected slot, 4 the text shadow.
+static const u16 sHudPalette[16] =
+{
+    RGB(31, 31, 31), RGB(30, 18, 6), RGB(9, 5, 3), RGB(31, 25, 15),
+    RGB(31, 31, 31), RGB(26, 14, 4), RGB(20, 10, 3), RGB(31, 31, 31),
+    RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31),
+    RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31),
+};
+
+static const u8 sHudTextColor[3] = { 1, 2, 4 };
 
 static const u8 sText_Slash[] = _("/");
 
@@ -136,6 +150,9 @@ static const struct WindowTemplate sWindowTemplate_Label =
     .paletteNum = HUD_PALETTE_NUM,
     .baseBlock = HUD_TILE_BASE + COLUMN_TILES + PARTY_BAR_TILES + COUNTER_TILES,
 };
+
+#define HUD_TILES_USED (COLUMN_TILES + PARTY_BAR_TILES + COUNTER_TILES + (LABEL_WIDTH_TILES * LABEL_HEIGHT_TILES))
+STATIC_ASSERT(HUD_TILE_BASE + HUD_TILES_USED <= HUD_TILE_LIMIT, HudWindowsOverrunBg0Tiles);
 
 static const struct OamData sOamData_HudIcon =
 {
@@ -264,21 +281,27 @@ void StartMenuHud_Show(const u8 *actions, u32 numActions, u32 cursorPos)
     sCounterWindowId = AddWindow(&sWindowTemplate_Counter);
     sLabelWindowId = AddWindow(&sWindowTemplate_Label);
 
-    PutWindowTilemap(sColumnWindowId);
-    PutWindowTilemap(sPartyBarWindowId);
-    PutWindowTilemap(sCounterWindowId);
-    PutWindowTilemap(sLabelWindowId);
-
+    LoadPalette(sHudPalette, BG_PLTT_ID(HUD_PALETTE_NUM), sizeof(sHudPalette));
     LoadCompressedSpriteSheetUsingHeap(&sSpriteSheet_HudIcons);
     LoadSpritePalette(&sSpritePalette_HudIcons);
 
     CreateIconSprites();
     CreatePartyIcons();
 
+    PutWindowTilemap(sColumnWindowId);
+    PutWindowTilemap(sCounterWindowId);
+    PutWindowTilemap(sLabelWindowId);
+
     DrawColumn();
-    DrawPartyBar();
     DrawCounter();
     DrawLabel();
+
+    // No party yet (pre-starter) means no bar at all, rather than an empty one.
+    if (sNumPartyIcons != 0)
+    {
+        PutWindowTilemap(sPartyBarWindowId);
+        DrawPartyBar();
+    }
 
     sHudActive = TRUE;
 }
@@ -313,6 +336,9 @@ void StartMenuHud_Hide(void)
 
     FreeSpriteTilesByTag(HUD_ICON_TAG);
     FreeSpritePaletteByTag(HUD_ICON_TAG);
+
+    // Give palette 15 back to the message box before any field text draws.
+    LoadMessageBoxGfx(0, DLG_WINDOW_BASE_TILE_NUM, BG_PLTT_ID(DLG_WINDOW_PALETTE_NUM));
 
     ClearWindowTilemap(sColumnWindowId);
     ClearWindowTilemap(sPartyBarWindowId);
@@ -389,38 +415,66 @@ static void CreatePartyIcons(void)
     }
 }
 
+// Panels are plain window buffers, so their frames are drawn as pixels: a dark
+// outline with the corner pixels knocked out, and the selected slot inverted so
+// the cursor is unmistakable at a glance.
+#define HUD_COLOR_BG        1
+#define HUD_COLOR_INK       2
+#define HUD_COLOR_SHADOW    3
+
+static void DrawOutline(u32 windowId, u32 color, u32 x, u32 y, u32 w, u32 h)
+{
+    FillWindowPixelRect(windowId, PIXEL_FILL(color), x + 1, y, w - 2, 1);
+    FillWindowPixelRect(windowId, PIXEL_FILL(color), x + 1, y + h - 1, w - 2, 1);
+    FillWindowPixelRect(windowId, PIXEL_FILL(color), x, y + 1, 1, h - 2);
+    FillWindowPixelRect(windowId, PIXEL_FILL(color), x + w - 1, y + 1, 1, h - 2);
+}
+
+static void DrawPanel(u32 windowId, u32 w, u32 h)
+{
+    FillWindowPixelBuffer(windowId, PIXEL_FILL(HUD_COLOR_BG));
+    DrawOutline(windowId, HUD_COLOR_INK, 0, 0, w, h);
+}
+
+static void DrawSelection(u32 windowId, u32 x, u32 y, u32 w, u32 h)
+{
+    FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_SHADOW), x, y, w, h);
+    DrawOutline(windowId, HUD_COLOR_INK, x, y, w, h);
+    DrawOutline(windowId, HUD_COLOR_INK, x + 1, y + 1, w - 2, h - 2);
+}
+
 static void DrawColumn(void)
 {
-    FillWindowPixelBuffer(sColumnWindowId, PIXEL_FILL(1));
+    DrawPanel(sColumnWindowId, COLUMN_WIDTH_TILES * 8, COLUMN_HEIGHT_TILES * 8);
 
     if (sCursorArea == CURSOR_AREA_COLUMN)
     {
-        FillWindowPixelRect(sColumnWindowId, PIXEL_FILL(3), 4, ColumnSlotTop(sColumnPos),
-                            COLUMN_WIDTH_TILES * 8 - 8, ICON_SLOT_HEIGHT);
+        DrawSelection(sColumnWindowId, 2, ColumnSlotTop(sColumnPos),
+                      (COLUMN_WIDTH_TILES * 8) - 4, ICON_SLOT_HEIGHT);
     }
 
-    CopyWindowToVram(sColumnWindowId, COPYWIN_GFX);
+    CopyWindowToVram(sColumnWindowId, COPYWIN_FULL);
 }
 
 static void DrawPartyBar(void)
 {
-    FillWindowPixelBuffer(sPartyBarWindowId, PIXEL_FILL(1));
+    DrawPanel(sPartyBarWindowId, PARTY_BAR_WIDTH_TILES * 8, PARTY_BAR_HEIGHT_TILES * 8);
 
     if (sCursorArea == CURSOR_AREA_PARTY && sNumPartyIcons != 0)
     {
-        FillWindowPixelRect(sPartyBarWindowId, PIXEL_FILL(3),
-                            (PARTY_SLOT_FIRST_X - (PARTY_SLOT_WIDTH / 2)) + (sPartyPos * PARTY_SLOT_WIDTH), 0,
-                            PARTY_SLOT_WIDTH, PARTY_BAR_HEIGHT_TILES * 8);
+        DrawSelection(sPartyBarWindowId,
+                      (PARTY_SLOT_FIRST_X - (PARTY_SLOT_WIDTH / 2)) + (sPartyPos * PARTY_SLOT_WIDTH), 0,
+                      PARTY_SLOT_WIDTH, PARTY_BAR_HEIGHT_TILES * 8);
     }
 
-    CopyWindowToVram(sPartyBarWindowId, COPYWIN_GFX);
+    CopyWindowToVram(sPartyBarWindowId, COPYWIN_FULL);
 }
 
 static void DrawCounter(void)
 {
     u32 width;
 
-    FillWindowPixelBuffer(sCounterWindowId, PIXEL_FILL(1));
+    DrawPanel(sCounterWindowId, COUNTER_WIDTH_TILES * 8, COUNTER_HEIGHT_TILES * 8);
 
     ConvertIntToDecimalStringN(gStringVar1, GetNationalPokedexCount(FLAG_GET_CAUGHT), STR_CONV_MODE_LEFT_ALIGN, 4);
     ConvertIntToDecimalStringN(gStringVar2, GetNationalPokedexCount(FLAG_GET_SEEN), STR_CONV_MODE_LEFT_ALIGN, 4);
@@ -429,9 +483,9 @@ static void DrawCounter(void)
     StringAppend(gStringVar4, gStringVar2);
 
     width = GetStringWidth(FONT_SMALL, gStringVar4, 0);
-    AddTextPrinterParameterized3(sCounterWindowId, FONT_SMALL, (COUNTER_WIDTH_TILES * 8) - width - 2, 2,
+    AddTextPrinterParameterized3(sCounterWindowId, FONT_SMALL, (COUNTER_WIDTH_TILES * 8) - width - 4, 3,
                                  sHudTextColor, TEXT_SKIP_DRAW, gStringVar4);
-    CopyWindowToVram(sCounterWindowId, COPYWIN_GFX);
+    CopyWindowToVram(sCounterWindowId, COPYWIN_FULL);
 }
 
 static void DrawLabel(void)
@@ -439,7 +493,7 @@ static void DrawLabel(void)
     const u8 *text;
     u32 width;
 
-    FillWindowPixelBuffer(sLabelWindowId, PIXEL_FILL(1));
+    DrawPanel(sLabelWindowId, LABEL_WIDTH_TILES * 8, LABEL_HEIGHT_TILES * 8);
 
     if (sCursorArea == CURSOR_AREA_PARTY)
     {
@@ -457,9 +511,9 @@ static void DrawLabel(void)
 
     StringExpandPlaceholders(gStringVar4, text);
     width = GetStringWidth(FONT_NORMAL, gStringVar4, 0);
-    AddTextPrinterParameterized3(sLabelWindowId, FONT_NORMAL, (LABEL_WIDTH_TILES * 8) - width - 2, 1,
+    AddTextPrinterParameterized3(sLabelWindowId, FONT_NORMAL, (LABEL_WIDTH_TILES * 8) - width - 4, 1,
                                  sHudTextColor, TEXT_SKIP_DRAW, gStringVar4);
-    CopyWindowToVram(sLabelWindowId, COPYWIN_GFX);
+    CopyWindowToVram(sLabelWindowId, COPYWIN_FULL);
 }
 
 bool32 StartMenuHud_HandleDpadInput(void)

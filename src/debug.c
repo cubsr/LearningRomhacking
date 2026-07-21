@@ -1786,6 +1786,9 @@ static void DebugAction_Util_LinkTest(u8 taskId)
 #define tProbeFrames data[0]
 #define tProbeLogs   data[1]
 #define tProbeStarts data[2]
+#define tBurstGood   data[3]
+#define tBurstBad    data[4]
+#define tBurstStalls data[5]
 
 static void Task_RawSioProbe(u8 taskId)
 {
@@ -1794,22 +1797,63 @@ static void Task_RawSioProbe(u8 taskId)
     u16 recv[4];
     u16 siocnt;
 
+    // Read the previous transfer's result BEFORE arming a new one: the
+    // hardware blanks these registers to ffff while a transfer is in
+    // flight, so sampling after arming always reads ffff.
+    *(u64 *)recv = REG_SIOMLT_RECV;
+    siocnt = REG_SIOCNT;
+
     REG_SIOMLT_SEND = mine;
 
-    // The console wired as ID 0 is the clock source. Re-arm whenever the
-    // previous transfer has finished.
-    siocnt = REG_SIOCNT;
-    if (SIO_MULTI_CNT->id == 0 && !(siocnt & SIO_MULTI_BUSY))
+    if (SIO_MULTI_CNT->id == 0)
     {
-        REG_SIOCNT = siocnt | SIO_START;
-        tProbeStarts++;
+        if (tProbeFrames < 600)
+        {
+            // Phase 1: one transfer per frame, the cadence the probe
+            // already proved works.
+            if (!(siocnt & SIO_MULTI_BUSY))
+            {
+                REG_SIOCNT = siocnt | SIO_START;
+                tProbeStarts++;
+            }
+        }
+        else
+        {
+            // Phase 2: nine transfers in a frame, the burst the real link
+            // drives from its timer. If the bus can't keep up with this,
+            // that is precisely where the game's stream loses alignment.
+            u32 i;
+
+            for (i = 0; i < 9; i++)
+            {
+                u32 spin = 0;
+                u16 burst[4];
+
+                REG_SIOMLT_SEND = mine;
+                REG_SIOCNT |= SIO_START;
+                while ((REG_SIOCNT & SIO_MULTI_BUSY) && ++spin < 100000)
+                    ;
+                if (spin >= 100000)
+                {
+                    tBurstStalls++;
+                    break;
+                }
+                tProbeStarts++;
+                *(u64 *)burst = REG_SIOMLT_RECV;
+                if (burst[1] != 0xB2B2)
+                    tBurstBad++;
+                else
+                    tBurstGood++;
+            }
+        }
     }
 
     // Run for a full minute: both windows have to be probing at the same
     // time, and reaching the menu in the second one takes a while.
     if (++tProbeFrames > 3600)
     {
-        DebugPrintf("rawsio: done (started %d transfers)", tProbeStarts);
+            DebugPrintf("rawsio: done starts=%d burstOK=%d burstBad=%d stalls=%d",
+                    tProbeStarts, tBurstGood, tBurstBad, tBurstStalls);
         DestroyTask(taskId);
         return;
     }
@@ -1818,10 +1862,10 @@ static void Task_RawSioProbe(u8 taskId)
         return;
     tProbeLogs++;
 
-    *(u64 *)recv = REG_SIOMLT_RECV;
-    DebugPrintf("rawsio: t=%ds id=%d sent=%04x recv %04x %04x %04x %04x siocnt=%04x starts=%d",
-                tProbeFrames / 60, SIO_MULTI_CNT->id, mine,
-                recv[0], recv[1], recv[2], recv[3], REG_SIOCNT, tProbeStarts);
+    DebugPrintf("rawsio: t=%ds %s id=%d recv %04x %04x %04x %04x burstOK=%d burstBad=%d stalls=%d",
+                tProbeFrames / 60, tProbeFrames < 600 ? "single" : "BURST",
+                SIO_MULTI_CNT->id, recv[0], recv[1], recv[2], recv[3],
+                tBurstGood, tBurstBad, tBurstStalls);
 }
 
 static void DebugAction_Util_RawSioProbe(u8 taskId)
@@ -1847,6 +1891,10 @@ static void DebugAction_Util_RawSioProbe(u8 taskId)
 
 #undef tProbeFrames
 #undef tProbeLogs
+#undef tProbeStarts
+#undef tBurstGood
+#undef tBurstBad
+#undef tBurstStalls
 
 static void DebugAction_Util_CheatStart(u8 taskId)
 {
