@@ -38,6 +38,7 @@
 #include "script.h"
 #include "sound.h"
 #include "start_menu.h"
+#include "start_menu_hud.h"
 #include "strings.h"
 #include "string_util.h"
 #include "task.h"
@@ -52,25 +53,7 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 
-// Menu actions
-enum
-{
-    MENU_ACTION_POKEDEX,
-    MENU_ACTION_POKEMON,
-    MENU_ACTION_BAG,
-    MENU_ACTION_POKENAV,
-    MENU_ACTION_PLAYER,
-    MENU_ACTION_SAVE,
-    MENU_ACTION_OPTION,
-    MENU_ACTION_EXIT,
-    MENU_ACTION_RETIRE_SAFARI,
-    MENU_ACTION_PLAYER_LINK,
-    MENU_ACTION_REST_FRONTIER,
-    MENU_ACTION_RETIRE_FRONTIER,
-    MENU_ACTION_PYRAMID_BAG,
-    MENU_ACTION_DEBUG,
-    MENU_ACTION_DEXNAV,
-};
+// Menu actions live in include/start_menu.h so the HUD can map them to icons.
 
 // Save status
 enum
@@ -89,7 +72,7 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[9] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[START_MENU_ACTION_MAX] = {0};
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
 
 EWRAM_DATA static u8 (*sSaveDialogCallback)(void) = NULL;
@@ -112,6 +95,7 @@ static bool8 StartMenuBattlePyramidRetireCallback(void);
 static bool8 StartMenuBattlePyramidBagCallback(void);
 static bool8 StartMenuDebugCallback(void);
 static bool8 StartMenuDexNavCallback(void);
+static bool8 StartMenuPCCallback(void);
 
 // Menu callbacks
 static bool8 SaveStartCallback(void);
@@ -189,6 +173,7 @@ static const struct WindowTemplate sWindowTemplate_PyramidPeak = {
 };
 
 static const u8 sText_MenuDebug[] = _("DEBUG");
+static const u8 sText_MenuPC[] = _("PC");
 
 static const struct MenuAction sStartMenuItems[] =
 {
@@ -207,6 +192,7 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_PYRAMID_BAG]     = {gText_MenuBag,     {.u8_void = StartMenuBattlePyramidBagCallback}},
     [MENU_ACTION_DEBUG]           = {sText_MenuDebug,   {.u8_void = StartMenuDebugCallback}},
     [MENU_ACTION_DEXNAV]          = {gText_MenuDexNav,  {.u8_void = StartMenuDexNavCallback}},
+    [MENU_ACTION_PC]              = {sText_MenuPC,      {.u8_void = StartMenuPCCallback}},
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -260,7 +246,6 @@ static void BuildMultiPartnerRoomStartMenu(void);
 static void ShowSafariBallsWindow(void);
 static void ShowPyramidFloorWindow(void);
 static void RemoveExtraStartMenuWindows(void);
-static bool32 PrintStartMenuActions(s8 *pIndex, u32 count);
 static bool32 InitStartMenuStep(void);
 static void InitStartMenu(void);
 static void CreateStartMenuTask(TaskFunc followupFunc);
@@ -339,7 +324,10 @@ static void BuildNormalStartMenu(void)
         AddStartMenuAction(MENU_ACTION_DEXNAV);
 
     if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE)
+    {
         AddStartMenuAction(MENU_ACTION_POKEMON);
+        AddStartMenuAction(MENU_ACTION_PC);
+    }
 
     AddStartMenuAction(MENU_ACTION_BAG);
 
@@ -475,6 +463,8 @@ static void ShowPyramidFloorWindow(void)
 
 static void RemoveExtraStartMenuWindows(void)
 {
+    StartMenuHud_Hide();
+
     if (GetSafariZoneFlag())
     {
         ClearStdWindowAndFrameToTransparent(sSafariBallsWindowId, FALSE);
@@ -534,7 +524,7 @@ static bool32 InitStartMenuStep(void)
         break;
     case 2:
         LoadMessageBoxAndBorderGfx();
-        DrawStdWindowFrame(AddStartMenuWindow(sNumStartMenuActions), FALSE);
+        StartMenuHud_Show(sCurrentStartMenuActions, sNumStartMenuActions, sStartMenuCursorPos);
         sInitStartMenuData[1] = 0;
         sInitStartMenuData[0]++;
         break;
@@ -546,12 +536,9 @@ static bool32 InitStartMenuStep(void)
         sInitStartMenuData[0]++;
         break;
     case 4:
-        if (PrintStartMenuActions(&sInitStartMenuData[1], 2))
-            sInitStartMenuData[0]++;
+        sInitStartMenuData[0]++;
         break;
     case 5:
-        sStartMenuCursorPos = InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, sNumStartMenuActions, sStartMenuCursorPos);
-        CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_MAP);
         return TRUE;
     }
 
@@ -634,21 +621,24 @@ void ShowStartMenu(void)
 
 static bool8 HandleStartMenuInput(void)
 {
-    if (JOY_NEW(DPAD_UP))
-    {
-        PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(-1);
-    }
-
-    if (JOY_NEW(DPAD_DOWN))
-    {
-        PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(1);
-    }
+    // The HUD owns the cursor: the icon column and the party bar.
+    if (StartMenuHud_HandleDpadInput())
+        return FALSE;
 
     if (JOY_NEW(A_BUTTON))
     {
         PlaySE(SE_SELECT);
+
+        // A on a party icon opens the party menu.
+        if (StartMenuHud_IsOnParty())
+        {
+            gMenuCallback = StartMenuPokemonCallback;
+            FadeScreen(FADE_TO_BLACK, 0);
+            return FALSE;
+        }
+
+        sStartMenuCursorPos = StartMenuHud_GetCursorPos();
+
         if (sStartMenuItems[sCurrentStartMenuActions[sStartMenuCursorPos]].func.u8_void == StartMenuPokedexCallback)
         {
             if (GetNationalPokedexCount(FLAG_GET_SEEN) == 0)
@@ -664,7 +654,8 @@ static bool8 HandleStartMenuInput(void)
             && gMenuCallback != StartMenuExitCallback
             && gMenuCallback != StartMenuDebugCallback
             && gMenuCallback != StartMenuSafariZoneRetireCallback
-            && gMenuCallback != StartMenuBattlePyramidRetireCallback)
+            && gMenuCallback != StartMenuBattlePyramidRetireCallback
+            && gMenuCallback != StartMenuPCCallback)
         {
            FadeScreen(FADE_TO_BLACK, 0);
         }
@@ -769,6 +760,8 @@ static bool8 StartMenuSaveCallback(void)
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
         RemoveExtraStartMenuWindows();
 
+    StartMenuHud_Hide();
+
     gMenuCallback = SaveStartCallback; // Display save menu
 
     return FALSE;
@@ -824,8 +817,7 @@ static bool8 StartMenuSafariZoneRetireCallback(void)
 static void HideStartMenuDebug(void)
 {
     PlaySE(SE_SELECT);
-    ClearStdWindowAndFrame(GetStartMenuWindowId(), TRUE);
-    RemoveStartMenuWindow();
+    StartMenuHud_Hide();
 }
 
 static bool8 StartMenuLinkModePlayerNameCallback(void)
@@ -1259,8 +1251,7 @@ static void InitBattlePyramidRetire(void)
 
 static u8 BattlePyramidConfirmRetireCallback(void)
 {
-    ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
-    RemoveStartMenuWindow();
+    StartMenuHud_Hide();
     ShowSaveMessage(gText_BattlePyramidConfirmRetire, BattlePyramidRetireYesNoCallback);
 
     return SAVE_IN_PROGRESS;
@@ -1512,8 +1503,7 @@ void SaveForBattleTowerLink(void)
 
 static void HideStartMenuWindow(void)
 {
-    ClearStdWindowAndFrame(GetStartMenuWindowId(), TRUE);
-    RemoveStartMenuWindow();
+    StartMenuHud_Hide();
     ScriptUnfreezeObjectEvents();
     UnlockPlayerFieldControls();
 }
@@ -1530,8 +1520,28 @@ void AppendToList(u8 *list, u8 *pos, u8 newEntry)
     (*pos)++;
 }
 
+// Opening storage from the menu reuses the PC's own script so that the storage
+// system still exits through ScriptContext_Enable() the way it expects to.
+static bool8 StartMenuPCCallback(void)
+{
+    RemoveExtraStartMenuWindows();
+    HideStartMenu();
+    ScriptContext_SetupScript(EventScript_RemotePokemonStorage);
+
+    return TRUE;
+}
+
+const u8 *StartMenu_GetActionName(u32 action)
+{
+    if (action >= ARRAY_COUNT(sStartMenuItems) || sStartMenuItems[action].text == NULL)
+        return gText_EmptyString2;
+
+    return sStartMenuItems[action].text;
+}
+
 static bool8 StartMenuDexNavCallback(void)
 {
+    RemoveExtraStartMenuWindows();
     CreateTask(Task_OpenDexNavFromStartMenu, 0);
     return TRUE;
 }

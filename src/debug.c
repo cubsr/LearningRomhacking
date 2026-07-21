@@ -1785,35 +1785,43 @@ static void DebugAction_Util_LinkTest(u8 taskId)
 // print the same four values and each sees its own value in its own slot.
 #define tProbeFrames data[0]
 #define tProbeLogs   data[1]
+#define tProbeStarts data[2]
 
 static void Task_RawSioProbe(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
     u16 mine = (SIO_MULTI_CNT->id == 0) ? 0xA1A1 : 0xB2B2;
     u16 recv[4];
+    u16 siocnt;
 
     REG_SIOMLT_SEND = mine;
 
-    // The console wired as ID 0 is the clock source.
-    if (SIO_MULTI_CNT->id == 0 && !(REG_SIOCNT & SIO_MULTI_BUSY))
-        REG_SIOCNT |= SIO_START;
-
-    if (++tProbeFrames > 180)
+    // The console wired as ID 0 is the clock source. Re-arm whenever the
+    // previous transfer has finished.
+    siocnt = REG_SIOCNT;
+    if (SIO_MULTI_CNT->id == 0 && !(siocnt & SIO_MULTI_BUSY))
     {
-        DebugPrintf("rawsio: done");
+        REG_SIOCNT = siocnt | SIO_START;
+        tProbeStarts++;
+    }
+
+    // Run for a full minute: both windows have to be probing at the same
+    // time, and reaching the menu in the second one takes a while.
+    if (++tProbeFrames > 3600)
+    {
+        DebugPrintf("rawsio: done (started %d transfers)", tProbeStarts);
         DestroyTask(taskId);
         return;
     }
 
-    // Sample a handful of frames, spaced out so a transfer can complete.
-    if ((tProbeFrames % 20) != 0 || tProbeLogs >= 8)
+    if ((tProbeFrames % 60) != 0 || tProbeLogs >= 20)
         return;
     tProbeLogs++;
 
     *(u64 *)recv = REG_SIOMLT_RECV;
-    DebugPrintf("rawsio: id=%d sent=%04x recv %04x %04x %04x %04x siocnt=%04x",
-                SIO_MULTI_CNT->id, mine, recv[0], recv[1], recv[2], recv[3],
-                REG_SIOCNT);
+    DebugPrintf("rawsio: t=%ds id=%d sent=%04x recv %04x %04x %04x %04x siocnt=%04x starts=%d",
+                tProbeFrames / 60, SIO_MULTI_CNT->id, mine,
+                recv[0], recv[1], recv[2], recv[3], REG_SIOCNT, tProbeStarts);
 }
 
 static void DebugAction_Util_RawSioProbe(u8 taskId)
@@ -1826,15 +1834,15 @@ static void DebugAction_Util_RawSioProbe(u8 taskId)
     // Take the serial hardware away from the link stack for the probe.
     CloseLink();
     REG_RCNT = 0;
-    REG_SIOCNT = SIO_MULTI_MODE;
-    REG_SIOCNT |= SIO_115200_BPS;
+    REG_SIOCNT = SIO_MULTI_MODE | SIO_115200_BPS;
     REG_SIOMLT_SEND = 0;
 
-    DebugPrintf("rawsio: probe start (mode=%d id=%d)",
-                SIO_MULTI_CNT->mode, SIO_MULTI_CNT->id);
+    DebugPrintf("rawsio: probing 60s - start the other window too (siocnt=%04x id=%d)",
+                REG_SIOCNT, SIO_MULTI_CNT->id);
     probeId = CreateTask(Task_RawSioProbe, 80);
     gTasks[probeId].tProbeFrames = 0;
     gTasks[probeId].tProbeLogs = 0;
+    gTasks[probeId].tProbeStarts = 0;
 }
 
 #undef tProbeFrames

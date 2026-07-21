@@ -39,6 +39,15 @@ EventScript_AccessPokemonStorage::
 	goto EventScript_PCMainMenu
 	end
 
+@ Storage opened from the start menu HUD, with no physical PC involved.
+EventScript_RemotePokemonStorage::
+	lockall
+	playse SE_PC_LOGIN
+	msgbox gText_StorageSystemOpened, MSGBOX_DEFAULT
+	special ShowPokemonStorageSystemPC
+	releaseall
+	end
+
 EventScript_AccessSomeonesPC::
 	msgbox gText_AccessedSomeonesPC, MSGBOX_DEFAULT
 	return
