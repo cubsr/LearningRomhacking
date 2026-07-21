@@ -38,6 +38,8 @@ static EWRAM_DATA struct
     bool8 busyReceived;     // partner declined our request
     bool8 inCoopBattle;
     bool8 helloPending;
+    u8 recvLogCount;
+    u16 hellosSent;
     u32 checksumErrors;
 } sCoop = {0};
 
@@ -207,7 +209,11 @@ static void Task_CoopLinkup(u8 taskId)
             // corrupted transfer costs nothing but a few frames.
         if (!sCoop.partner.valid)
         {
-            if (++tTimer > 1800)
+            if ((++tTimer % 300) == 0)
+                DebugPrintf("coop: waiting for hello (%d frames), sent=%d recvQ=%d recvSeen=%d status=%08x",
+                            tTimer, sCoop.hellosSent, GetLinkRecvQueueLength(),
+                            sCoop.recvLogCount, gLinkStatus);
+            if (tTimer > 1800)
                 CoopLinkupFailed(taskId, "hello timeout");
             return;
         }
@@ -257,6 +263,7 @@ void CoopLink_BuildCmd(void)
     {
         if ((++sCoop.txTimer & 7) != 0)
             return;
+        sCoop.hellosSent++;
         gSendCmd[0] = LINKCMD_COOP_HELLO;
         gSendCmd[1] = COOP_PROTOCOL_VERSION;
         gSendCmd[2] = gSaveBlock2Ptr->randomizationSeed;
@@ -501,6 +508,20 @@ bool32 Coop_ToleratesChecksumErrors(void)
     if (sCoop.inCoopBattle)
         return FALSE;
     return sCoop.state == COOP_STATE_LINKING || sCoop.state == COOP_STATE_ACTIVE;
+}
+
+// Wire diagnostics: what, if anything, is actually arriving. Logs the
+// first few opcodes seen per slot so we can tell "nothing crosses" from
+// "data crosses but is corrupted".
+void CoopLink_NoteRecvOpcode(u32 playerId, u16 opcode)
+{
+    if (sCoop.state != COOP_STATE_LINKING)
+        return;
+    if (sCoop.recvLogCount >= 12)
+        return;
+    sCoop.recvLogCount++;
+    DebugPrintf("coop: wire recv slot=%d opcode=%04x (mine=%d)",
+                playerId, opcode, playerId == sCoop.localId);
 }
 
 void Coop_NoteChecksumError(void)

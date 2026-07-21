@@ -64,6 +64,7 @@ void Coop_StartReestablish(void);
 void Coop_SessionFailed(void);
 bool32 Coop_ToleratesChecksumErrors(void);
 void Coop_NoteChecksumError(void);
+void CoopLink_NoteRecvOpcode(u32 playerId, u16 opcode); // wire diagnostics
 
 // coop_battle.c
 bool32 Coop_TryStartCoopTrainerBattle(void); // from BattleSetup_StartTrainerBattle

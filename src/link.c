@@ -517,6 +517,7 @@ static void ProcessRecvCmds(u8 unused)
         {
             continue;
         }
+        CoopLink_NoteRecvOpcode(i, gRecvCmds[i][0]);
         switch (gRecvCmds[i][0])
         {
         case LINKCMD_SEND_LINK_TYPE:
