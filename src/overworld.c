@@ -3593,7 +3593,21 @@ u32 CoopAvatar_Update(s16 x, s16 y, u8 facingDir)
     }
 
     SetPlayerFacingDirection(COOP_AVATAR_LINK_SLOT, facing);
-    return abs(dx) + abs(dy);
+
+    // Cable club rooms never allowed running, so a step here always takes
+    // a walk's worth of frames and a running partner steadily pulls away
+    // until the avatar has to teleport. Each extra call advances an
+    // in-progress step by one more increment, so drive it harder the
+    // further behind we are: one extra for running, more to close a gap.
+    {
+        u32 behind = abs(dx) + abs(dy);
+        u32 extra = (behind >= 3) ? 3 : (behind >= 2) ? 1 : 0;
+
+        while (extra-- != 0)
+            SetPlayerFacingDirection(COOP_AVATAR_LINK_SLOT, FACING_NONE);
+
+        return behind;
+    }
 }
 
 static u8 MovementEventModeCB_Normal(struct LinkPlayerObjectEvent *linkPlayerObjEvent, struct ObjectEvent *objEvent, enum Direction dir)

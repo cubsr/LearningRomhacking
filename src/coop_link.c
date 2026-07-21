@@ -209,6 +209,7 @@ static EWRAM_DATA struct
     bool8 busyReceived;     // partner declined our request
     bool8 inCoopBattle;
     bool8 helloPending;
+    u16 helloRepeats;
     u8 recvLogCount;
     u16 hellosSent;
     u16 rxSeen;     // commands handed to us from the partner's slot
@@ -318,7 +319,9 @@ static void Task_CoopLinkup(u8 taskId)
             }
             return;
         }
-        sCoop.helloPending = FALSE;
+        // Keep answering with hellos for a while after going active: our
+        // first ones may not have landed, and the partner needs our seed.
+        sCoop.helloRepeats = 240;
         sCoop.state = COOP_STATE_ACTIVE;
         DebugPrintf("coop: ACTIVE id=%d host=%d partnerSeed=%08x",
                     sCoop.localId, Coop_IsHost(), sCoop.partner.seed);
@@ -370,9 +373,12 @@ void CoopLink_FrameUpdate(void)
 
     sCoop.txTimer++;
 
-    if (sCoop.helloPending)
+    if (sCoop.helloPending || sCoop.helloRepeats != 0)
     {
         u32 seed = gSaveBlock2Ptr->randomizationSeed;
+
+        if (sCoop.helloRepeats != 0)
+            sCoop.helloRepeats--;
 
         sCoop.hellosSent++;
         payload[0] = seed & COOP_CHUNK_MASK;
@@ -399,7 +405,6 @@ void CoopLink_FrameUpdate(void)
 
     // Refresh the presence snapshot a few times a second, but keep
     // sending the current one every frame.
-    if ((sCoop.txTimer & 3) == 0)
     {
         sCoop.presence[0] = (u8)gSaveBlock1Ptr->location.mapGroup;
         sCoop.presence[1] = (u8)gSaveBlock1Ptr->location.mapNum;

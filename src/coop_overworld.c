@@ -7,7 +7,7 @@
 // just chase its last reported tile with the link-player avatar.
 
 #define PARTNER_STALE_FRAMES 300 // ~5s without a presence packet
-#define SNAP_TILE_DISTANCE   3   // farther than this: teleport, don't walk
+#define SNAP_TILE_DISTANCE   6   // farther than this: teleport, don't walk
 
 void CoopOverworld_Update(void)
 {
