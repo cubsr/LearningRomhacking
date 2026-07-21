@@ -517,7 +517,9 @@ static void ProcessRecvCmds(u8 unused)
         {
             continue;
         }
-        CoopLink_NoteRecvOpcode(i, gRecvCmds[i][0]);
+        // Co-op packets are self-framing, so hand over every command
+        // rather than dispatching on gRecvCmds[i][0].
+        CoopLink_HandleRecvCmd(gRecvCmds[i], i);
         switch (gRecvCmds[i][0])
         {
         case LINKCMD_SEND_LINK_TYPE:
@@ -534,11 +536,6 @@ static void ProcessRecvCmds(u8 unused)
         }
         case LINKCMD_BLENDER_SEND_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
-            break;
-        case LINKCMD_COOP_HELLO:
-        case LINKCMD_COOP_PRESENCE:
-        case LINKCMD_COOP_BYE:
-            CoopLink_HandleRecvCmd(gRecvCmds[i], i);
             break;
         case LINKCMD_DUMMY_1:
             break;

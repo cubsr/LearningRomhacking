@@ -16,7 +16,72 @@
 // exchange, both sides swap a hello block (nonce + randomizer seed).
 
 // Bump when the packet layout changes so mismatched builds don't pair.
-#define COOP_PROTOCOL_VERSION 1
+#define COOP_PROTOCOL_VERSION 2
+
+// --- Self-framing packets ------------------------------------------------
+// The emulated link runs the two games one transfer out of step, so a
+// received command can be any rotation of what was sent (and the vanilla
+// framing puts the stream's checksum word where the opcode should be).
+// Every co-op packet therefore fills all 8 halfwords, carries a magic
+// marker plus a checksum, and sets bit 15 in every word so no rotation
+// can ever land a zero in slot 0 (which the link layer would discard).
+// The receiver finds the magic, un-rotates, and verifies. Senders repeat
+// an unchanged packet for several frames, so even a window straddling
+// two commands sees identical content.
+
+#define COOP_PKT_MAGIC  0xBCC3
+#define COOP_PKT_BIT    0x8000
+#define COOP_PKT_MASK   0x7FFF
+
+enum CoopPacketType
+{
+    COOP_PKT_HELLO = 1,
+    COOP_PKT_PRESENCE,
+    COOP_PKT_BATTLE_REQ,
+    COOP_PKT_BATTLE_ACK,
+    COOP_PKT_BATTLE_BUSY,
+    COOP_PKT_BYE,
+};
+
+static u16 CoopPacketChecksum(const u16 *pkt)
+{
+    u32 sum = 0;
+    u32 i;
+
+    for (i = 0; i < CMD_LENGTH - 1; i++)
+        sum += pkt[i];
+    return COOP_PKT_BIT | (sum & COOP_PKT_MASK);
+}
+
+// payload[0..4] carry 15 bits each.
+static void CoopBuildPacket(u16 *dst, u8 type, const u16 *payload)
+{
+    u32 i;
+
+    dst[0] = COOP_PKT_MAGIC;
+    dst[1] = COOP_PKT_BIT | type;
+    for (i = 0; i < 5; i++)
+        dst[2 + i] = COOP_PKT_BIT | (payload[i] & COOP_PKT_MASK);
+    dst[7] = CoopPacketChecksum(dst);
+}
+
+// Recover a packet from any rotation; returns FALSE if this command
+// isn't a valid co-op packet.
+static bool32 CoopParsePacket(const u16 *cmd, u16 *out)
+{
+    u32 rot, i;
+
+    for (rot = 0; rot < CMD_LENGTH; rot++)
+    {
+        if (cmd[rot] != COOP_PKT_MAGIC)
+            continue;
+        for (i = 0; i < CMD_LENGTH; i++)
+            out[i] = cmd[(rot + i) % CMD_LENGTH];
+        if (out[7] == CoopPacketChecksum(out))
+            return TRUE;
+    }
+    return FALSE;
+}
 
 static EWRAM_DATA struct
 {
@@ -27,9 +92,11 @@ static EWRAM_DATA struct
     u32 nonce;
     struct CoopPartnerStatus partner;
 
-    // One-shot outgoing command (takes priority over the presence beat)
-    u16 queuedCmd[3];
-    bool8 cmdQueued;
+    // Repeated control packet (takes priority over the presence beat)
+    u8 queuedType;
+    u8 queuedRepeats;
+    u16 queuedArg;
+    u16 presence[5];
 
     // Co-op battle negotiation mailbox
     bool8 reqPending;       // partner asked us to join a battle
@@ -236,18 +303,30 @@ static u8 Coop_GetLocalActivity(void)
     return COOP_ACTIVITY_ROAMING;
 }
 
+// Queue a control packet; it is repeated for a few frames so a single
+// mangled transfer can't lose it.
 void Coop_QueueCommand(u16 op, u16 a, u16 b)
 {
-    sCoop.queuedCmd[0] = op;
-    sCoop.queuedCmd[1] = a;
-    sCoop.queuedCmd[2] = b;
-    sCoop.cmdQueued = TRUE;
+    switch (op)
+    {
+    case LINKCMD_COOP_BATTLE_REQ:  sCoop.queuedType = COOP_PKT_BATTLE_REQ;  break;
+    case LINKCMD_COOP_BATTLE_ACK:  sCoop.queuedType = COOP_PKT_BATTLE_ACK;  break;
+    case LINKCMD_COOP_BATTLE_BUSY: sCoop.queuedType = COOP_PKT_BATTLE_BUSY; break;
+    case LINKCMD_COOP_BYE:         sCoop.queuedType = COOP_PKT_BYE;         break;
+    default: return;
+    }
+    sCoop.queuedArg = a;
+    sCoop.queuedRepeats = 20;
 }
 
 // Called once per frame from LinkMain2 after link callbacks have had
-// their chance to claim gSendCmd.
+// their chance to claim gSendCmd. The same packet is emitted on
+// consecutive frames so a receiver whose framing straddles two commands
+// still reads consistent content.
 void CoopLink_BuildCmd(void)
 {
+    u16 payload[5] = {0};
+
     if (sCoop.state != COOP_STATE_ACTIVE && sCoop.state != COOP_STATE_LINKING)
         return;
 
@@ -257,90 +336,103 @@ void CoopLink_BuildCmd(void)
     if (gSendCmd[0] != 0)
         return;
 
-    // Repeat the hello until the partner's arrives; the reply doubles as
-    // the acknowledgement.
+    sCoop.txTimer++;
+
     if (sCoop.helloPending)
     {
-        if ((++sCoop.txTimer & 7) != 0)
-            return;
+        u32 seed = gSaveBlock2Ptr->randomizationSeed;
+
         sCoop.hellosSent++;
-        gSendCmd[0] = LINKCMD_COOP_HELLO;
-        gSendCmd[1] = COOP_PROTOCOL_VERSION;
-        gSendCmd[2] = gSaveBlock2Ptr->randomizationSeed;
-        gSendCmd[3] = gSaveBlock2Ptr->randomizationSeed >> 16;
-        gSendCmd[4] = gSaveBlock2Ptr->randomizationFlags | (gSaveBlock2Ptr->playerGender << 8);
-        gSendCmd[5] = sCoop.nonce;
+        payload[0] = seed & COOP_PKT_MASK;
+        payload[1] = (seed >> 15) & COOP_PKT_MASK;
+        payload[2] = (seed >> 30) & 0x3;
+        payload[3] = gSaveBlock2Ptr->randomizationFlags | (gSaveBlock2Ptr->playerGender << 8);
+        payload[4] = COOP_PROTOCOL_VERSION;
+        CoopBuildPacket(gSendCmd, COOP_PKT_HELLO, payload);
         return;
     }
 
     if (sCoop.state != COOP_STATE_ACTIVE)
         return;
 
-    if (sCoop.cmdQueued)
+    if (sCoop.queuedRepeats != 0)
     {
-        gSendCmd[0] = sCoop.queuedCmd[0];
-        gSendCmd[1] = sCoop.queuedCmd[1];
-        gSendCmd[2] = sCoop.queuedCmd[2];
-        sCoop.cmdQueued = FALSE;
+        sCoop.queuedRepeats--;
+        payload[0] = sCoop.queuedArg;
+        CoopBuildPacket(gSendCmd, sCoop.queuedType, payload);
         return;
     }
 
-    if ((++sCoop.txTimer & 3) != 0)
-        return;
-
-    gSendCmd[0] = LINKCMD_COOP_PRESENCE;
-    gSendCmd[1] = ((u8)gSaveBlock1Ptr->location.mapGroup << 8) | (u8)gSaveBlock1Ptr->location.mapNum;
-    gSendCmd[2] = gSaveBlock1Ptr->pos.x;
-    gSendCmd[3] = gSaveBlock1Ptr->pos.y;
-    gSendCmd[4] = (GetPlayerFacingDirection() << 8) | Coop_GetLocalActivity();
-    gSendCmd[5] = ++sCoop.seq;
+    // Refresh the presence snapshot a few times a second, but keep
+    // sending the current one every frame.
+    if ((sCoop.txTimer & 3) == 0)
+    {
+        sCoop.presence[0] = ((u8)gSaveBlock1Ptr->location.mapGroup << 7)
+                          | ((u8)gSaveBlock1Ptr->location.mapNum & 0x7F);
+        sCoop.presence[1] = gSaveBlock1Ptr->pos.x & COOP_PKT_MASK;
+        sCoop.presence[2] = gSaveBlock1Ptr->pos.y & COOP_PKT_MASK;
+        sCoop.presence[3] = (GetPlayerFacingDirection() << 4) | Coop_GetLocalActivity();
+        sCoop.presence[4] = ++sCoop.seq & 0x7FF;
+    }
+    CoopBuildPacket(gSendCmd, COOP_PKT_PRESENCE, sCoop.presence);
 }
 
 void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
 {
+    u16 pkt[CMD_LENGTH];
+    u16 payload[5];
+    u32 i;
+
     if (sCoop.state == COOP_STATE_IDLE || sCoop.state == COOP_STATE_ERROR)
         return;
     if (playerId == sCoop.localId)
         return;
+    if (!CoopParsePacket(cmd, pkt))
+        return;
 
-    switch (cmd[0])
+    for (i = 0; i < 5; i++)
+        payload[i] = pkt[2 + i] & COOP_PKT_MASK;
+
+    switch (pkt[1] & COOP_PKT_MASK)
     {
-    case LINKCMD_COOP_HELLO:
-        if (cmd[1] != COOP_PROTOCOL_VERSION)
+    case COOP_PKT_HELLO:
+        if (payload[4] != COOP_PROTOCOL_VERSION)
         {
-            DebugPrintf("coop: partner protocol %d != %d, ignoring",
-                        cmd[1], COOP_PROTOCOL_VERSION);
+            if (sCoop.recvLogCount++ < 4)
+                DebugPrintf("coop: partner protocol %d != %d, ignoring",
+                            payload[4], COOP_PROTOCOL_VERSION);
             return;
         }
-        sCoop.partner.seed = cmd[2] | ((u32)cmd[3] << 16);
-        sCoop.partner.randoFlags = cmd[4] & 0xFF;
-        sCoop.partner.gender = cmd[4] >> 8;
+        sCoop.partner.seed = payload[0] | ((u32)payload[1] << 15) | ((u32)payload[2] << 30);
+        sCoop.partner.randoFlags = payload[3] & 0xFF;
+        sCoop.partner.gender = (payload[3] >> 8) & 1;
         sCoop.partner.valid = TRUE;
         sCoop.partner.framesSinceUpdate = 0;
         break;
-    case LINKCMD_COOP_PRESENCE:
+    case COOP_PKT_PRESENCE:
         sCoop.partner.valid = TRUE;
-        sCoop.partner.mapGroup = cmd[1] >> 8;
-        sCoop.partner.mapNum = cmd[1] & 0xFF;
-        sCoop.partner.x = cmd[2];
-        sCoop.partner.y = cmd[3];
-        sCoop.partner.facing = cmd[4] >> 8;
-        sCoop.partner.activity = cmd[4] & 0xFF;
-        sCoop.partner.lastSeq = cmd[5];
+        sCoop.partner.mapGroup = payload[0] >> 7;
+        sCoop.partner.mapNum = payload[0] & 0x7F;
+        sCoop.partner.x = payload[1];
+        sCoop.partner.y = payload[2];
+        sCoop.partner.facing = payload[3] >> 4;
+        sCoop.partner.activity = payload[3] & 0xF;
+        sCoop.partner.lastSeq = payload[4];
         sCoop.partner.framesSinceUpdate = 0;
         break;
-    case LINKCMD_COOP_BATTLE_REQ:
-        DebugPrintf("coop: battle request trainer=%d", cmd[1]);
+    case COOP_PKT_BATTLE_REQ:
+        if (!sCoop.reqPending)
+            DebugPrintf("coop: battle request trainer=%d", payload[0]);
         sCoop.reqPending = TRUE;
-        sCoop.reqTrainerId = cmd[1];
+        sCoop.reqTrainerId = payload[0];
         break;
-    case LINKCMD_COOP_BATTLE_ACK:
+    case COOP_PKT_BATTLE_ACK:
         sCoop.ackReceived = TRUE;
         break;
-    case LINKCMD_COOP_BATTLE_BUSY:
+    case COOP_PKT_BATTLE_BUSY:
         sCoop.busyReceived = TRUE;
         break;
-    case LINKCMD_COOP_BYE:
+    case COOP_PKT_BYE:
         DebugPrintf("coop: partner left");
         sCoop.partner.valid = FALSE;
         sCoop.state = COOP_STATE_ERROR;
@@ -508,20 +600,6 @@ bool32 Coop_ToleratesChecksumErrors(void)
     if (sCoop.inCoopBattle)
         return FALSE;
     return sCoop.state == COOP_STATE_LINKING || sCoop.state == COOP_STATE_ACTIVE;
-}
-
-// Wire diagnostics: what, if anything, is actually arriving. Logs the
-// first few opcodes seen per slot so we can tell "nothing crosses" from
-// "data crosses but is corrupted".
-void CoopLink_NoteRecvOpcode(u32 playerId, u16 opcode)
-{
-    if (sCoop.state != COOP_STATE_LINKING)
-        return;
-    if (sCoop.recvLogCount >= 12)
-        return;
-    sCoop.recvLogCount++;
-    DebugPrintf("coop: wire recv slot=%d opcode=%04x (mine=%d)",
-                playerId, opcode, playerId == sCoop.localId);
 }
 
 void Coop_NoteChecksumError(void)
