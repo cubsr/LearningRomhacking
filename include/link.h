@@ -267,6 +267,7 @@ void ClearLinkCallback(void);
 void ClearLinkCallback_2(void);
 u8 GetLinkPlayerCount(void);
 void OpenLinkTimed(void);
+void Link_DebugDumpSendState(void);
 void LinkTestScreen(void); // pret's built-in link diagnostic
 u8 GetLinkPlayerDataExchangeStatusTimed(int minPlayers, int maxPlayers);
 bool8 IsLinkPlayerDataExchangeComplete(void);

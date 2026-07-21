@@ -1514,6 +1514,25 @@ static void LinkCB_StandbyForAll(void)
     }
 }
 
+// Diagnostic: where does an outgoing co-op packet stop? Shows whether it
+// reached the send queue and what the hardware is actually transmitting.
+void Link_DebugDumpSendState(void)
+{
+    DebugPrintf("link: q.count=%d q.pos=%d sendIdx=%d recvIdx=%d empty=%d rq.count=%d mltsend=%04x",
+                gLink.sendQueue.count, gLink.sendQueue.pos,
+                gLink.sendCmdIndex, gLink.recvCmdIndex,
+                sSendBufferEmpty, gLink.recvQueue.count, REG_SIOMLT_SEND);
+    DebugPrintf("link: queued[pos] %04x %04x %04x %04x %04x %04x %04x %04x",
+                gLink.sendQueue.data[0][gLink.sendQueue.pos],
+                gLink.sendQueue.data[1][gLink.sendQueue.pos],
+                gLink.sendQueue.data[2][gLink.sendQueue.pos],
+                gLink.sendQueue.data[3][gLink.sendQueue.pos],
+                gLink.sendQueue.data[4][gLink.sendQueue.pos],
+                gLink.sendQueue.data[5][gLink.sendQueue.pos],
+                gLink.sendQueue.data[6][gLink.sendQueue.pos],
+                gLink.sendQueue.data[7][gLink.sendQueue.pos]);
+}
+
 static void TrySetLinkErrorBuffer(void)
 {
     // Check if a link error has occurred

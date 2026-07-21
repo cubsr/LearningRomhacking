@@ -384,8 +384,11 @@ static void Task_CoopLinkup(u8 taskId)
         if (!sCoop.partner.valid)
         {
             if ((++tTimer % 300) == 0)
+            {
                 DebugPrintf("coop: waiting for hello (%d frames) sent=%d rxSeen=%d rxParsed=%d status=%08x",
                             tTimer, sCoop.hellosSent, sCoop.rxSeen, sCoop.rxParsed, gLinkStatus);
+                Link_DebugDumpSendState();
+            }
             if (tTimer > 1800)
                 CoopLinkupFailed(taskId, "hello timeout");
             return;
