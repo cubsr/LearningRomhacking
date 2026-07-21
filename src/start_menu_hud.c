@@ -5,7 +5,6 @@
 #include "main.h"
 #include "menu.h"
 #include "palette.h"
-#include "pokedex.h"
 #include "pokemon.h"
 #include "pokemon_icon.h"
 #include "sound.h"
@@ -28,7 +27,6 @@
 // Layout (240x160):
 //   - action icons in a column down the right edge (tiles x 26-29)
 //   - the party as mon icons along the bottom (tiles y 16-19)
-//   - a Pokedex caught/seen counter in the top right
 //   - a label naming whatever the cursor is on, above the party bar
 
 enum
@@ -67,10 +65,6 @@ enum
 #define PARTY_BAR_HEIGHT_TILES  4
 #define PARTY_BAR_TILES         (PARTY_BAR_WIDTH_TILES * PARTY_BAR_HEIGHT_TILES)
 
-#define COUNTER_WIDTH_TILES     8
-#define COUNTER_HEIGHT_TILES    2
-#define COUNTER_TILES           (COUNTER_WIDTH_TILES * COUNTER_HEIGHT_TILES)
-
 #define LABEL_WIDTH_TILES       12
 #define LABEL_HEIGHT_TILES      2
 
@@ -93,19 +87,21 @@ static const u32 sHudIconsGfx[] = INCGFX_U32("graphics/interface/hud_icons.png",
 static const u16 sHudIconsPal[] = INCBIN_U16("graphics/interface/hud_icons.gbapal");
 
 // The HUD owns BG palette 15 while it is open and hands it back to the message
-// box on the way out. Index 1 is the panel fill, 2 the outline/text ink, 3 the
-// selected slot, 4 the text shadow.
+// box on the way out. The spread of oranges is what gives the panels their
+// bevel: 3 catches the light along the top/left, 4 is the shadow under the
+// bottom/right, and 2 is the hard outline around everything.
 static const u16 sHudPalette[16] =
 {
-    RGB(31, 31, 31), RGB(30, 18, 6), RGB(9, 5, 3), RGB(31, 25, 15),
-    RGB(31, 31, 31), RGB(26, 14, 4), RGB(20, 10, 3), RGB(31, 31, 31),
-    RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31),
-    RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31), RGB(31, 31, 31),
+    [0] = RGB(31, 31, 31),
+    [1] = RGB(27, 15, 5),   // panel fill
+    [2] = RGB(5, 3, 2),     // outline / text shadow
+    [3] = RGB(31, 24, 13),  // lit edge
+    [4] = RGB(16, 8, 2),    // shaded edge
+    [5] = RGB(31, 20, 8),   // selected slot fill
+    [6] = RGB(31, 31, 31),  // text
 };
 
-static const u8 sHudTextColor[3] = { 1, 2, 4 };
-
-static const u8 sText_Slash[] = _("/");
+static const u8 sHudTextColor[3] = { 1, 6, 2 };
 
 static const struct WindowTemplate sWindowTemplate_Column =
 {
@@ -129,17 +125,6 @@ static const struct WindowTemplate sWindowTemplate_PartyBar =
     .baseBlock = HUD_TILE_BASE + COLUMN_TILES,
 };
 
-static const struct WindowTemplate sWindowTemplate_Counter =
-{
-    .bg = 0,
-    .tilemapLeft = 18,
-    .tilemapTop = 0,
-    .width = COUNTER_WIDTH_TILES,
-    .height = COUNTER_HEIGHT_TILES,
-    .paletteNum = HUD_PALETTE_NUM,
-    .baseBlock = HUD_TILE_BASE + COLUMN_TILES + PARTY_BAR_TILES,
-};
-
 static const struct WindowTemplate sWindowTemplate_Label =
 {
     .bg = 0,
@@ -148,10 +133,10 @@ static const struct WindowTemplate sWindowTemplate_Label =
     .width = LABEL_WIDTH_TILES,
     .height = LABEL_HEIGHT_TILES,
     .paletteNum = HUD_PALETTE_NUM,
-    .baseBlock = HUD_TILE_BASE + COLUMN_TILES + PARTY_BAR_TILES + COUNTER_TILES,
+    .baseBlock = HUD_TILE_BASE + COLUMN_TILES + PARTY_BAR_TILES,
 };
 
-#define HUD_TILES_USED (COLUMN_TILES + PARTY_BAR_TILES + COUNTER_TILES + (LABEL_WIDTH_TILES * LABEL_HEIGHT_TILES))
+#define HUD_TILES_USED (COLUMN_TILES + PARTY_BAR_TILES + (LABEL_WIDTH_TILES * LABEL_HEIGHT_TILES))
 STATIC_ASSERT(HUD_TILE_BASE + HUD_TILES_USED <= HUD_TILE_LIMIT, HudWindowsOverrunBg0Tiles);
 
 static const struct OamData sOamData_HudIcon =
@@ -235,7 +220,6 @@ static const u8 sActionIcons[MENU_ACTION_COUNT] =
 EWRAM_DATA static bool8 sHudActive = FALSE;
 EWRAM_DATA static u8 sColumnWindowId = 0;
 EWRAM_DATA static u8 sPartyBarWindowId = 0;
-EWRAM_DATA static u8 sCounterWindowId = 0;
 EWRAM_DATA static u8 sLabelWindowId = 0;
 EWRAM_DATA static u8 sIconSpriteIds[START_MENU_ACTION_MAX] = {0};
 EWRAM_DATA static u8 sPartySpriteIds[PARTY_SIZE] = {0};
@@ -249,7 +233,6 @@ EWRAM_DATA static u8 sPartyPos = 0;
 static void DrawColumn(void);
 static void DrawPartyBar(void);
 static void DrawLabel(void);
-static void DrawCounter(void);
 static void CreateIconSprites(void);
 static void CreatePartyIcons(void);
 static u32 ColumnSlotTop(u32 index);
@@ -278,7 +261,6 @@ void StartMenuHud_Show(const u8 *actions, u32 numActions, u32 cursorPos)
 
     sColumnWindowId = AddWindow(&sWindowTemplate_Column);
     sPartyBarWindowId = AddWindow(&sWindowTemplate_PartyBar);
-    sCounterWindowId = AddWindow(&sWindowTemplate_Counter);
     sLabelWindowId = AddWindow(&sWindowTemplate_Label);
 
     LoadPalette(sHudPalette, BG_PLTT_ID(HUD_PALETTE_NUM), sizeof(sHudPalette));
@@ -289,11 +271,9 @@ void StartMenuHud_Show(const u8 *actions, u32 numActions, u32 cursorPos)
     CreatePartyIcons();
 
     PutWindowTilemap(sColumnWindowId);
-    PutWindowTilemap(sCounterWindowId);
     PutWindowTilemap(sLabelWindowId);
 
     DrawColumn();
-    DrawCounter();
     DrawLabel();
 
     // No party yet (pre-starter) means no bar at all, rather than an empty one.
@@ -342,20 +322,16 @@ void StartMenuHud_Hide(void)
 
     ClearWindowTilemap(sColumnWindowId);
     ClearWindowTilemap(sPartyBarWindowId);
-    ClearWindowTilemap(sCounterWindowId);
     ClearWindowTilemap(sLabelWindowId);
     CopyWindowToVram(sColumnWindowId, COPYWIN_MAP);
     CopyWindowToVram(sPartyBarWindowId, COPYWIN_MAP);
-    CopyWindowToVram(sCounterWindowId, COPYWIN_MAP);
     CopyWindowToVram(sLabelWindowId, COPYWIN_MAP);
 
     RemoveWindow(sColumnWindowId);
     RemoveWindow(sPartyBarWindowId);
-    RemoveWindow(sCounterWindowId);
     RemoveWindow(sLabelWindowId);
     sColumnWindowId = WINDOW_NONE;
     sPartyBarWindowId = WINDOW_NONE;
-    sCounterWindowId = WINDOW_NONE;
     sLabelWindowId = WINDOW_NONE;
 
     sNumActions = 0;
@@ -415,12 +391,17 @@ static void CreatePartyIcons(void)
     }
 }
 
-// Panels are plain window buffers, so their frames are drawn as pixels: a dark
-// outline with the corner pixels knocked out, and the selected slot inverted so
-// the cursor is unmistakable at a glance.
-#define HUD_COLOR_BG        1
+// Panels are plain window buffers, so the 3D look is drawn as pixels: a hard
+// outline, then a lit edge along the top/left and a shaded edge along the
+// bottom/right. The selected slot gets the same treatment a size smaller so it
+// reads as a raised button sitting in the panel.
+#define HUD_COLOR_FILL      1
 #define HUD_COLOR_INK       2
-#define HUD_COLOR_SHADOW    3
+#define HUD_COLOR_LIT       3
+#define HUD_COLOR_SHADE     4
+#define HUD_COLOR_SELECT    5
+
+#define BEVEL_WIDTH 2
 
 static void DrawOutline(u32 windowId, u32 color, u32 x, u32 y, u32 w, u32 h)
 {
@@ -430,17 +411,31 @@ static void DrawOutline(u32 windowId, u32 color, u32 x, u32 y, u32 w, u32 h)
     FillWindowPixelRect(windowId, PIXEL_FILL(color), x + w - 1, y + 1, 1, h - 2);
 }
 
+static void DrawBevel(u32 windowId, u32 x, u32 y, u32 w, u32 h, u32 thickness)
+{
+    u32 i;
+
+    for (i = 1; i <= thickness; i++)
+    {
+        FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_LIT), x + i, y + i, w - (i * 2), 1);
+        FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_LIT), x + i, y + i, 1, h - (i * 2));
+        FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_SHADE), x + i, y + h - 1 - i, w - (i * 2), 1);
+        FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_SHADE), x + w - 1 - i, y + i, 1, h - (i * 2));
+    }
+}
+
 static void DrawPanel(u32 windowId, u32 w, u32 h)
 {
-    FillWindowPixelBuffer(windowId, PIXEL_FILL(HUD_COLOR_BG));
+    FillWindowPixelBuffer(windowId, PIXEL_FILL(HUD_COLOR_FILL));
     DrawOutline(windowId, HUD_COLOR_INK, 0, 0, w, h);
+    DrawBevel(windowId, 0, 0, w, h, BEVEL_WIDTH);
 }
 
 static void DrawSelection(u32 windowId, u32 x, u32 y, u32 w, u32 h)
 {
-    FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_SHADOW), x, y, w, h);
+    FillWindowPixelRect(windowId, PIXEL_FILL(HUD_COLOR_SELECT), x, y, w, h);
     DrawOutline(windowId, HUD_COLOR_INK, x, y, w, h);
-    DrawOutline(windowId, HUD_COLOR_INK, x + 1, y + 1, w - 2, h - 2);
+    DrawBevel(windowId, x, y, w, h, BEVEL_WIDTH);
 }
 
 static void DrawColumn(void)
@@ -449,8 +444,8 @@ static void DrawColumn(void)
 
     if (sCursorArea == CURSOR_AREA_COLUMN)
     {
-        DrawSelection(sColumnWindowId, 2, ColumnSlotTop(sColumnPos),
-                      (COLUMN_WIDTH_TILES * 8) - 4, ICON_SLOT_HEIGHT);
+        DrawSelection(sColumnWindowId, BEVEL_WIDTH + 1, ColumnSlotTop(sColumnPos),
+                      (COLUMN_WIDTH_TILES * 8) - ((BEVEL_WIDTH + 1) * 2), ICON_SLOT_HEIGHT);
     }
 
     CopyWindowToVram(sColumnWindowId, COPYWIN_FULL);
@@ -463,29 +458,12 @@ static void DrawPartyBar(void)
     if (sCursorArea == CURSOR_AREA_PARTY && sNumPartyIcons != 0)
     {
         DrawSelection(sPartyBarWindowId,
-                      (PARTY_SLOT_FIRST_X - (PARTY_SLOT_WIDTH / 2)) + (sPartyPos * PARTY_SLOT_WIDTH), 0,
-                      PARTY_SLOT_WIDTH, PARTY_BAR_HEIGHT_TILES * 8);
+                      (PARTY_SLOT_FIRST_X - (PARTY_SLOT_WIDTH / 2)) + (sPartyPos * PARTY_SLOT_WIDTH),
+                      BEVEL_WIDTH + 1, PARTY_SLOT_WIDTH,
+                      (PARTY_BAR_HEIGHT_TILES * 8) - ((BEVEL_WIDTH + 1) * 2));
     }
 
     CopyWindowToVram(sPartyBarWindowId, COPYWIN_FULL);
-}
-
-static void DrawCounter(void)
-{
-    u32 width;
-
-    DrawPanel(sCounterWindowId, COUNTER_WIDTH_TILES * 8, COUNTER_HEIGHT_TILES * 8);
-
-    ConvertIntToDecimalStringN(gStringVar1, GetNationalPokedexCount(FLAG_GET_CAUGHT), STR_CONV_MODE_LEFT_ALIGN, 4);
-    ConvertIntToDecimalStringN(gStringVar2, GetNationalPokedexCount(FLAG_GET_SEEN), STR_CONV_MODE_LEFT_ALIGN, 4);
-    StringCopy(gStringVar4, gStringVar1);
-    StringAppend(gStringVar4, sText_Slash);
-    StringAppend(gStringVar4, gStringVar2);
-
-    width = GetStringWidth(FONT_SMALL, gStringVar4, 0);
-    AddTextPrinterParameterized3(sCounterWindowId, FONT_SMALL, (COUNTER_WIDTH_TILES * 8) - width - 4, 3,
-                                 sHudTextColor, TEXT_SKIP_DRAW, gStringVar4);
-    CopyWindowToVram(sCounterWindowId, COPYWIN_FULL);
 }
 
 static void DrawLabel(void)

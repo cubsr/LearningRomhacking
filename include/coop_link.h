@@ -47,8 +47,7 @@ bool32 Coop_IsHost(void);
 const struct CoopPartnerStatus *Coop_GetPartnerStatus(void);
 
 // Hooks called from link.c
-void CoopLink_BuildCmd(void);                          // LinkMain2, once per frame
-void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId); // ProcessRecvCmds
+void CoopLink_FrameUpdate(void); // main loop, once per frame
 bool32 Coop_OnLinkError(void);                         // TrySetLinkErrorBuffer; TRUE = suppress error screen
 
 // Battle negotiation / co-op battle support

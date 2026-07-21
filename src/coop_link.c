@@ -3,6 +3,7 @@
 #include "event_data.h"
 #include "field_player_avatar.h"
 #include "link.h"
+#include "coop_sio.h"
 #include "main.h"
 #include "overworld.h"
 #include "random.h"
@@ -212,8 +213,8 @@ static EWRAM_DATA struct
     u16 hellosSent;
     u16 rxSeen;     // commands handed to us from the partner's slot
     u16 rxParsed;   // ...that decoded into a valid co-op packet
-    u8 dumpCount;
-    u16 lastSent[CMD_LENGTH];
+    u16 rxChunks[COOP_CHUNKS];
+    u8 rxSeenMask;
     u32 checksumErrors;
 } sCoop = {0};
 
@@ -251,7 +252,7 @@ void Coop_StartSession(void)
     if (oldTask != TASK_NONE)
     {
         DestroyTask(oldTask);
-        CloseLink();
+        CoopSio_Stop();
     }
 
     memset(&sCoop, 0, sizeof(sCoop));
@@ -267,7 +268,7 @@ void Coop_EndSession(void)
     if (taskId != TASK_NONE)
         DestroyTask(taskId);
     if (sCoop.state == COOP_STATE_ACTIVE || sCoop.state == COOP_STATE_LINKING)
-        SetCloseLinkCallback();
+        CoopSio_Stop();
     sCoop.state = COOP_STATE_IDLE;
     sCoop.partner.valid = FALSE;
     DebugPrintf("coop: session ended");
@@ -276,121 +277,45 @@ void Coop_EndSession(void)
 #define tState  data[0]
 #define tTimer  data[1]
 
-static void CoopLinkupFailed(u8 taskId, const char *why)
-{
-    DebugPrintf("coop: linkup failed (%s)", why);
-    gLinkType = 0;
-    CloseLink();
-    sCoop.state = COOP_STATE_ERROR;
-    DestroyTask(taskId);
-}
-
-#define tRetries data[2]
-#define COOP_LINKUP_MAX_RETRIES 8
-#define COOP_LINKUP_RETRY_STATE 90
-
 static void Task_CoopLinkup(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
 
-    // Transient SIO errors are common when the two games open their
-    // links far apart in time: back off and reopen instead of failing.
-    if (tState >= 1 && tState < COOP_LINKUP_RETRY_STATE && HasLinkErrorOccurred() == TRUE)
-    {
-        if (++tRetries > COOP_LINKUP_MAX_RETRIES)
-        {
-            CoopLinkupFailed(taskId, "too many link errors");
-            return;
-        }
-        DebugPrintf("coop: linkup retry %d", tRetries);
-        CloseLink();
-        tTimer = 0;
-        tState = COOP_LINKUP_RETRY_STATE;
-    }
-
     switch (tState)
     {
-    case COOP_LINKUP_RETRY_STATE: // cooldown, then reopen
-        if (++tTimer > 60)
-            tState = 0;
-        break;
     case 0:
-        gLinkType = LINKTYPE_COOP;
-        OpenLinkTimed();
-        ResetLinkPlayerCount();
-        ResetLinkPlayers();
-        // Drop the vanilla player-data exchange callback: co-op does its
-        // own identification, and leaving it armed would start a block
-        // transfer we neither need nor can rely on. It also keeps
-        // gReceivedRemoteLinkPlayers clear, so field code doesn't mistake
-        // the session for a cable club room.
-        gLinkCallback = NULL;
+        // Drive the serial hardware ourselves. There is no handshake to
+        // negotiate: both games simply start exchanging self-describing
+        // words, and the hardware assigns the IDs.
+        CoopSio_Start();
         tTimer = 0;
         tState = 1;
         break;
     case 1:
-        if (++tTimer > 10)
-            tState = 2;
-        break;
-    case 2: // wait for the second game
-        if (JOY_NEW(B_BUTTON) && IsLinkConnectionEstablished() == FALSE)
-        {
-            CoopLinkupFailed(taskId, "canceled");
-            return;
-        }
-        if (++tTimer > 60 * 30)
-        {
-            CoopLinkupFailed(taskId, "no partner");
-            return;
-        }
-        if (GetLinkPlayerCount_2() >= 2)
-        {
-            SetSuppressLinkErrorMessage(TRUE);
-            tTimer = 0;
-            tState = 3;
-        }
-        break;
-    case 3: // settle, then the master advances the link state for everyone
         if (++tTimer < 30)
             break;
-        DebugPrintf("coop: advancing link state, players=%d master=%d",
-                    GetLinkPlayerCount_2(), (gLinkStatus & LINK_STAT_MASTER) != 0);
-        if (gLinkStatus & LINK_STAT_MASTER)
-            CheckShouldAdvanceLinkState();
-        tTimer = 0;
-        tState = 4;
-        break;
-    case 4: // wait for the hardware connection, then identify ourselves
-            // from the link status directly. We deliberately do NOT use
-            // the vanilla player-data exchange: it rides the multi-frame
-            // block protocol, which the emulator's serial drift corrupts.
-        if (!(gLinkStatus & LINK_STAT_CONN_ESTABLISHED))
-        {
-            if (++tTimer > 900)
-                CoopLinkupFailed(taskId, "no connection");
-            return;
-        }
-        sCoop.localId = gLinkStatus & LINK_STAT_LOCAL_ID;
+        sCoop.localId = CoopSio_GetLocalId() & 1;
         sCoop.nonce = ((u32)Random() << 16) | Random();
         sCoop.helloPending = TRUE;
-        DebugPrintf("coop: connected as id=%d host=%d, saying hello",
+        DebugPrintf("coop: transport up as id=%d host=%d, saying hello",
                     sCoop.localId, Coop_IsHost());
         tTimer = 0;
-        tState = 5;
+        tState = 2;
         break;
-    case 5: // trade hello packets on the raw command channel. These are
-            // single self-contained frames repeated until one lands, so a
-            // corrupted transfer costs nothing but a few frames.
+    case 2:
         if (!sCoop.partner.valid)
         {
             if ((++tTimer % 300) == 0)
-            {
-                DebugPrintf("coop: waiting for hello (%d frames) sent=%d rxSeen=%d rxParsed=%d status=%08x",
-                            tTimer, sCoop.hellosSent, sCoop.rxSeen, sCoop.rxParsed, gLinkStatus);
-                Link_DebugDumpSendState();
-            }
+                DebugPrintf("coop: waiting for hello (%d frames) rxWords=%d rxPackets=%d id=%d",
+                            tTimer, sCoop.rxSeen, sCoop.rxParsed, CoopSio_GetLocalId());
             if (tTimer > 1800)
-                CoopLinkupFailed(taskId, "hello timeout");
+            {
+                DebugPrintf("coop: hello timeout (rxWords=%d rxPackets=%d)",
+                            sCoop.rxSeen, sCoop.rxParsed);
+                CoopSio_Stop();
+                sCoop.state = COOP_STATE_ERROR;
+                DestroyTask(taskId);
+            }
             return;
         }
         sCoop.helloPending = FALSE;
@@ -432,18 +357,16 @@ void Coop_QueueCommand(u16 op, u16 a, u16 b)
 // their chance to claim gSendCmd. The same packet is emitted on
 // consecutive frames so a receiver whose framing straddles two commands
 // still reads consistent content.
-void CoopLink_BuildCmd(void)
+void CoopLink_FrameUpdate(void)
 {
     u16 payload[5] = {0};
+    u16 packet[CMD_LENGTH];
 
     if (sCoop.state != COOP_STATE_ACTIVE && sCoop.state != COOP_STATE_LINKING)
         return;
 
     if (sCoop.partner.valid && sCoop.partner.framesSinceUpdate < 0xFFFF)
         sCoop.partner.framesSinceUpdate++;
-
-    if (gSendCmd[0] != 0)
-        return;
 
     sCoop.txTimer++;
 
@@ -457,8 +380,8 @@ void CoopLink_BuildCmd(void)
         payload[2] = (seed >> 24) & 0xFF;
         payload[3] = gSaveBlock2Ptr->randomizationFlags | (gSaveBlock2Ptr->playerGender << 8);
         payload[4] = 0;
-        CoopBuildPacket(gSendCmd, COOP_PKT_HELLO, payload);
-        memcpy(sCoop.lastSent, gSendCmd, sizeof(sCoop.lastSent));
+        CoopBuildPacket(packet, COOP_PKT_HELLO, payload);
+        CoopSio_SetPacket(packet);
         return;
     }
 
@@ -469,7 +392,8 @@ void CoopLink_BuildCmd(void)
     {
         sCoop.queuedRepeats--;
         payload[0] = sCoop.queuedArg;
-        CoopBuildPacket(gSendCmd, sCoop.queuedType, payload);
+        CoopBuildPacket(packet, sCoop.queuedType, payload);
+        CoopSio_SetPacket(packet);
         return;
     }
 
@@ -485,42 +409,13 @@ void CoopLink_BuildCmd(void)
                           | (Coop_GetLocalActivity() << 5)
                           | (++sCoop.seq & 0x1F);
     }
-    CoopBuildPacket(gSendCmd, COOP_PKT_PRESENCE, sCoop.presence);
+    CoopBuildPacket(packet, COOP_PKT_PRESENCE, sCoop.presence);
+    CoopSio_SetPacket(packet);
 }
 
-void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
+static void CoopDispatchPacket(const u16 *chunk)
 {
-    u16 chunk[COOP_CHUNKS];
     const u16 *payload = &chunk[1];
-
-    if (sCoop.state == COOP_STATE_IDLE || sCoop.state == COOP_STATE_ERROR)
-        return;
-
-    // Ground truth: dump raw words for both our own echo and the
-    // partner's slot, next to what we actually put on the wire.
-    if (sCoop.dumpCount < 8)
-    {
-        sCoop.dumpCount++;
-        DebugPrintf("coop: RX slot%d %04x %04x %04x %04x %04x %04x %04x %04x",
-                    playerId, cmd[0], cmd[1], cmd[2], cmd[3],
-                    cmd[4], cmd[5], cmd[6], cmd[7]);
-        if (sCoop.dumpCount == 1)
-            DebugPrintf("coop: TX      %04x %04x %04x %04x %04x %04x %04x %04x",
-                        sCoop.lastSent[0], sCoop.lastSent[1], sCoop.lastSent[2],
-                        sCoop.lastSent[3], sCoop.lastSent[4], sCoop.lastSent[5],
-                        sCoop.lastSent[6], sCoop.lastSent[7]);
-    }
-
-    // Only slots below the player count are refreshed by the link layer;
-    // the rest keep stale data forever, so ignore anything that isn't
-    // the partner's slot.
-    if (playerId != (u32)(sCoop.localId ^ 1))
-        return;
-
-    sCoop.rxSeen++;
-    if (!CoopParsePacket(cmd, chunk))
-        return;
-    sCoop.rxParsed++;
 
     switch (chunk[0] & 0xF)
     {
@@ -559,6 +454,41 @@ void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
         sCoop.partner.valid = FALSE;
         sCoop.state = COOP_STATE_ERROR;
         break;
+    }
+}
+
+// One word arrives per frame. Each carries its own index, so they can be
+// filed in any order; index 7 closes the cycle and triggers assembly,
+// where the parity word covers a single missing word.
+void CoopLink_ReceiveWord(u16 word)
+{
+    u32 idx;
+
+    if (sCoop.state == COOP_STATE_IDLE || sCoop.state == COOP_STATE_ERROR)
+        return;
+    if (!(word & COOP_WORD_BIT))
+        return;
+
+    idx = (word >> 12) & 7;
+    sCoop.rxChunks[idx] = word & COOP_CHUNK_MASK;
+    sCoop.rxSeenMask |= 1 << idx;
+    sCoop.rxSeen++;
+
+    if (idx != COOP_CHUNKS - 1)
+        return;
+
+    {
+        u16 chunk[COOP_CHUNKS];
+        u32 i;
+
+        for (i = 0; i < COOP_CHUNKS; i++)
+            chunk[i] = sCoop.rxChunks[i];
+        if (CoopVerifyChunks(chunk, sCoop.rxSeenMask))
+        {
+            sCoop.rxParsed++;
+            CoopDispatchPacket(chunk);
+        }
+        sCoop.rxSeenMask = 0;
     }
 }
 
@@ -628,76 +558,18 @@ u32 Coop_GetHostSeed(void)
     return Coop_IsHost() ? gSaveBlock2Ptr->randomizationSeed : sCoop.partner.seed;
 }
 
-// Physical link comes back after a battle closed it; the logical session
-// carried on the whole time.
+// Co-op battles hand the hardware to the vanilla battle link, so the
+// transport is restarted when the field comes back.
 static void Task_CoopReestablish(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
 
-    if (data[0] >= 1 && data[0] <= 3 && HasLinkErrorOccurred() == TRUE)
-    {
-        if (++data[2] > 8)
-        {
-            DebugPrintf("coop: reestablish giving up");
-            Coop_SessionFailed();
-            CloseLink();
-            DestroyTask(taskId);
-            return;
-        }
-        DebugPrintf("coop: reestablish retry %d", data[2]);
-        CloseLink();
-        data[1] = 0;
-        data[0] = 4;
-    }
-
-    switch (data[0])
-    {
-    case 4: // cooldown before reopening
-        if (++data[1] > 60)
-            data[0] = 0;
-        break;
-    case 0:
-        gLinkType = LINKTYPE_COOP;
-        OpenLink();
-        ResetLinkPlayers();
-        data[1] = 0;
-        data[0] = 1;
-        break;
-    case 1:
-        if (++data[1] > 10)
-            data[0] = 2;
-        break;
-    case 2:
-        if (GetLinkPlayerCount_2() >= 2)
-        {
-            if (IsLinkMaster() == TRUE)
-                CheckShouldAdvanceLinkState();
-            data[1] = 0;
-            data[0] = 3;
-        }
-        else if (++data[1] > 1800)
-        {
-            DebugPrintf("coop: reestablish timed out");
-            Coop_SessionFailed();
-            CloseLink();
-            DestroyTask(taskId);
-        }
-        break;
-    case 3:
-        if (gReceivedRemoteLinkPlayers == TRUE)
-        {
-            DebugPrintf("coop: link reestablished");
-            DestroyTask(taskId);
-        }
-        else if (++data[1] > 1800)
-        {
-            DebugPrintf("coop: reestablish timed out");
-            Coop_SessionFailed();
-            CloseLink();
-            DestroyTask(taskId);
-        }
-        break;
-    }
+    if (++data[0] < 30)
+        return;
+    CoopSio_Start();
+    sCoop.helloPending = TRUE;
+    DebugPrintf("coop: transport restarted after battle");
+    DestroyTask(taskId);
 }
 
 void Coop_StartReestablish(void)
@@ -708,15 +580,21 @@ void Coop_StartReestablish(void)
         CreateTask(Task_CoopReestablish, 80);
 }
 
-// Give up on the session entirely (retries exhausted).
+// Give up on the session entirely.
 void Coop_SessionFailed(void)
 {
     sCoop.state = COOP_STATE_ERROR;
     sCoop.partner.valid = FALSE;
+    CoopSio_Stop();
 }
 
-// Checksum errors are survivable outside of battles, where the vanilla
-// battle protocol needs an exact stream.
+// The vanilla link stack is closed while co-op owns the hardware, so its
+// error path no longer concerns us.
+bool32 Coop_OnLinkError(void)
+{
+    return FALSE;
+}
+
 bool32 Coop_ToleratesChecksumErrors(void)
 {
     if (sCoop.inCoopBattle)
@@ -733,46 +611,3 @@ void Coop_NoteChecksumError(void)
                     sCoop.checksumErrors, sCoop.state, GetLinkPlayerCount_2());
 }
 
-// Returns TRUE if the error belongs to a co-op session; the caller then
-// skips the CB2_LinkError screen and just closes the link. Transient
-// SIO errors are common when one game opens its link long before the
-// other, so both linkup and live sessions retry instead of dying.
-bool32 Coop_OnLinkError(void)
-{
-    switch (sCoop.state)
-    {
-    case COOP_STATE_LINKING:
-        // The linkup task notices via HasLinkErrorOccurred and retries.
-        DebugPrintf("coop: link error during linkup (status=%08x) hw=%d qfull=%d lagM=%d badId=%d lagS=%d players=%d",
-                    gLinkStatus,
-                    (gLinkStatus & LINK_STAT_ERROR_HARDWARE) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_QUEUE_FULL) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_LAG_MASTER) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_INVALID_ID) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_LAG_SLAVE) != 0,
-                    GetLinkPlayerCount_2());
-        return TRUE;
-    case COOP_STATE_ACTIVE:
-        DebugPrintf("coop: err bits hw=%d cksum=%d qfull=%d lagM=%d badId=%d lagS=%d players=%d",
-                    (gLinkStatus & LINK_STAT_ERROR_HARDWARE) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_CHECKSUM) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_QUEUE_FULL) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_LAG_MASTER) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_INVALID_ID) != 0,
-                    (gLinkStatus & LINK_STAT_ERROR_LAG_SLAVE) != 0,
-                    GetLinkPlayerCount_2());
-        if (sCoop.inCoopBattle)
-        {
-            // Mid-battle errors are fatal; the battle engine owns the link.
-            DebugPrintf("coop: link error in battle (status=%08x)", gLinkStatus);
-            Coop_SessionFailed();
-            return TRUE;
-        }
-        DebugPrintf("coop: link error (status=%08x), reconnecting", gLinkStatus);
-        sCoop.partner.framesSinceUpdate = 0x1000; // avatar goes stale immediately
-        Coop_StartReestablish();
-        return TRUE;
-    default:
-        return FALSE;
-    }
-}

@@ -483,7 +483,6 @@ u16 LinkMain2(const u16 *heldKeys)
         ProcessRecvCmds(SIO_MULTI_CNT->id);
         if (gLinkCallback != NULL)
             gLinkCallback();
-        CoopLink_BuildCmd();
         TrySetLinkErrorBuffer();
     }
     return gLinkStatus;
@@ -517,9 +516,6 @@ static void ProcessRecvCmds(u8 unused)
         {
             continue;
         }
-        // Co-op packets are self-framing, so hand over every command
-        // rather than dispatching on gRecvCmds[i][0].
-        CoopLink_HandleRecvCmd(gRecvCmds[i], i);
         switch (gRecvCmds[i][0])
         {
         case LINKCMD_SEND_LINK_TYPE:

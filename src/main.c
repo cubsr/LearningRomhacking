@@ -2,6 +2,8 @@
 #include "crt0.h"
 #include "malloc.h"
 #include "link.h"
+#include "coop_link.h"
+#include "coop_sio.h"
 #include "link_rfu.h"
 #include "librfu.h"
 #include "m4a.h"
@@ -175,6 +177,10 @@ void AgbMainLoop(void)
 
 static void UpdateLinkAndCallCallbacks(void)
 {
+    // Co-op drives the serial hardware itself, every frame, in every scene.
+    CoopLink_FrameUpdate();
+    CoopSio_Update();
+
     if (!HandleLinkConnection())
         CallCallbacks();
 }
