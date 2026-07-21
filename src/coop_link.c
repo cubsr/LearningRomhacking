@@ -116,12 +116,35 @@ static void CoopLinkupFailed(u8 taskId, const char *why)
     DestroyTask(taskId);
 }
 
+#define tRetries data[2]
+#define COOP_LINKUP_MAX_RETRIES 8
+#define COOP_LINKUP_RETRY_STATE 90
+
 static void Task_CoopLinkup(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
 
+    // Transient SIO errors are common when the two games open their
+    // links far apart in time: back off and reopen instead of failing.
+    if (tState >= 1 && tState < COOP_LINKUP_RETRY_STATE && HasLinkErrorOccurred() == TRUE)
+    {
+        if (++tRetries > COOP_LINKUP_MAX_RETRIES)
+        {
+            CoopLinkupFailed(taskId, "too many link errors");
+            return;
+        }
+        DebugPrintf("coop: linkup retry %d", tRetries);
+        CloseLink();
+        tTimer = 0;
+        tState = COOP_LINKUP_RETRY_STATE;
+    }
+
     switch (tState)
     {
+    case COOP_LINKUP_RETRY_STATE: // cooldown, then reopen
+        if (++tTimer > 60)
+            tState = 0;
+        break;
     case 0:
         gLinkType = LINKTYPE_COOP;
         OpenLinkTimed();
@@ -153,11 +176,6 @@ static void Task_CoopLinkup(u8 taskId)
         }
         break;
     case 3: // settle, then the master advances the link state for everyone
-        if (HasLinkErrorOccurred() == TRUE)
-        {
-            CoopLinkupFailed(taskId, "link error");
-            return;
-        }
         if (++tTimer < 30)
             break;
         SaveLinkPlayers(GetLinkPlayerCount_2());
@@ -173,11 +191,6 @@ static void Task_CoopLinkup(u8 taskId)
     {
         struct CoopHello *hello;
 
-        if (HasLinkErrorOccurred() == TRUE)
-        {
-            CoopLinkupFailed(taskId, "link error");
-            return;
-        }
         if (gReceivedRemoteLinkPlayers != TRUE)
         {
             if (++tTimer > 900)
@@ -209,11 +222,6 @@ static void Task_CoopLinkup(u8 taskId)
         const struct CoopHello *hello;
         u8 partnerId;
 
-        if (HasLinkErrorOccurred() == TRUE)
-        {
-            CoopLinkupFailed(taskId, "link error");
-            return;
-        }
         if ((GetBlockReceivedStatus() & 3) != 3)
         {
             if (++tTimer > 600)
@@ -400,8 +408,28 @@ static void Task_CoopReestablish(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
 
+    if (data[0] >= 1 && data[0] <= 3 && HasLinkErrorOccurred() == TRUE)
+    {
+        if (++data[2] > 8)
+        {
+            DebugPrintf("coop: reestablish giving up");
+            Coop_SessionFailed();
+            CloseLink();
+            DestroyTask(taskId);
+            return;
+        }
+        DebugPrintf("coop: reestablish retry %d", data[2]);
+        CloseLink();
+        data[1] = 0;
+        data[0] = 4;
+    }
+
     switch (data[0])
     {
+    case 4: // cooldown before reopening
+        if (++data[1] > 60)
+            data[0] = 0;
+        break;
     case 0:
         gLinkType = LINKTYPE_COOP;
         OpenLink();
@@ -424,7 +452,7 @@ static void Task_CoopReestablish(u8 taskId)
         else if (++data[1] > 1800)
         {
             DebugPrintf("coop: reestablish timed out");
-            Coop_OnLinkError();
+            Coop_SessionFailed();
             CloseLink();
             DestroyTask(taskId);
         }
@@ -438,7 +466,7 @@ static void Task_CoopReestablish(u8 taskId)
         else if (++data[1] > 1800)
         {
             DebugPrintf("coop: reestablish timed out");
-            Coop_OnLinkError();
+            Coop_SessionFailed();
             CloseLink();
             DestroyTask(taskId);
         }
@@ -454,15 +482,38 @@ void Coop_StartReestablish(void)
         CreateTask(Task_CoopReestablish, 80);
 }
 
-// Returns TRUE if the error belongs to a co-op session; the caller then
-// skips the CB2_LinkError screen and just closes the link.
-bool32 Coop_OnLinkError(void)
+// Give up on the session entirely (retries exhausted).
+void Coop_SessionFailed(void)
 {
-    if (sCoop.state != COOP_STATE_ACTIVE && sCoop.state != COOP_STATE_LINKING)
-        return FALSE;
-
-    DebugPrintf("coop: link error, session over (status=%08x)", gLinkStatus);
     sCoop.state = COOP_STATE_ERROR;
     sCoop.partner.valid = FALSE;
-    return TRUE;
+}
+
+// Returns TRUE if the error belongs to a co-op session; the caller then
+// skips the CB2_LinkError screen and just closes the link. Transient
+// SIO errors are common when one game opens its link long before the
+// other, so both linkup and live sessions retry instead of dying.
+bool32 Coop_OnLinkError(void)
+{
+    switch (sCoop.state)
+    {
+    case COOP_STATE_LINKING:
+        // The linkup task notices via HasLinkErrorOccurred and retries.
+        DebugPrintf("coop: link error during linkup (status=%08x), retrying", gLinkStatus);
+        return TRUE;
+    case COOP_STATE_ACTIVE:
+        if (sCoop.inCoopBattle)
+        {
+            // Mid-battle errors are fatal; the battle engine owns the link.
+            DebugPrintf("coop: link error in battle (status=%08x)", gLinkStatus);
+            Coop_SessionFailed();
+            return TRUE;
+        }
+        DebugPrintf("coop: link error (status=%08x), reconnecting", gLinkStatus);
+        sCoop.partner.framesSinceUpdate = 0x1000; // avatar goes stale immediately
+        Coop_StartReestablish();
+        return TRUE;
+    default:
+        return FALSE;
+    }
 }

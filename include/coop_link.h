@@ -61,6 +61,7 @@ bool32 Coop_InCoopBattle(void);
 u32 Coop_GetTrainerSlotSeed(u32 slot, u32 monsCount);
 u32 Coop_GetHostSeed(void);
 void Coop_StartReestablish(void);
+void Coop_SessionFailed(void);
 
 // coop_battle.c
 bool32 Coop_TryStartCoopTrainerBattle(void); // from BattleSetup_StartTrainerBattle
