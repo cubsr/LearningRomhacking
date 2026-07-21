@@ -5,6 +5,7 @@
 #include "clock.h"
 #include "coins.h"
 #include "coop_link.h"
+#include "link.h"
 #include "credits.h"
 #include "credits_frlg.h"
 #include "data.h"
@@ -281,6 +282,7 @@ static void DebugAction_Util_WatchCredits(u8 taskId);
 static void DebugAction_Util_CheatStart(u8 taskId);
 static void DebugAction_Util_CoopStart(u8 taskId);
 static void DebugAction_Util_CoopStatus(u8 taskId);
+static void DebugAction_Util_LinkTest(u8 taskId);
 
 static void DebugAction_TimeMenu_ChangeTimeOfDay(u8 taskId);
 static void DebugAction_TimeMenu_ChangeWeekdays(u8 taskId);
@@ -591,6 +593,7 @@ static const struct DebugMenuOption sDebugMenu_Actions_Utilities[] =
     { COMPOUND_STRING("Cheat start"),       DebugAction_Util_CheatStart },
     { COMPOUND_STRING("Co-op: start link"), DebugAction_Util_CoopStart },
     { COMPOUND_STRING("Co-op: status"),     DebugAction_Util_CoopStatus },
+    { COMPOUND_STRING("Link test screen"),  DebugAction_Util_LinkTest },
     { COMPOUND_STRING("Berry Functions…"),  DebugAction_OpenSubMenu, sDebugMenu_Actions_BerryFunctions },
     { COMPOUND_STRING("EWRAM Counters…"),   DebugAction_ExecuteScript, Debug_EventScript_EWRAMCounters },
     { COMPOUND_STRING("Follower NPC…"),     DebugAction_OpenSubMenu, sDebugMenu_Actions_FollowerNPCMenu },
@@ -1762,6 +1765,15 @@ static void DebugAction_Util_CoopStatus(u8 taskId)
                 p->mapGroup, p->mapNum, p->x, p->y, p->framesSinceUpdate, p->seed);
     Debug_DestroyMenu_Full(taskId);
     ScriptContext_Enable();
+}
+
+// pret's stock link diagnostic: exercises the vanilla trade-type link
+// with no co-op code involved, so a failure here is the emulator's.
+static void DebugAction_Util_LinkTest(u8 taskId)
+{
+    Debug_DestroyMenu_Full(taskId);
+    FreeAllWindowBuffers();
+    LinkTestScreen();
 }
 
 static void DebugAction_Util_CheatStart(u8 taskId)

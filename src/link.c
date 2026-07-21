@@ -277,7 +277,7 @@ static void UNUSED LoadLinkTestBgGfx(u8 paletteNum, u8 bgNum, u8 screenBaseBlock
     SetGpuReg(sBGControlRegs[bgNum], BGCNT_SCREENBASE(screenBaseBlock) | BGCNT_CHARBASE(charBaseBlock));
 }
 
-static void UNUSED LinkTestScreen(void)
+void LinkTestScreen(void)
 {
     int i;
 
