@@ -46,6 +46,7 @@ static EWRAM_DATA struct
     bool8 ackReceived;      // partner accepted our request
     bool8 busyReceived;     // partner declined our request
     bool8 inCoopBattle;
+    u32 checksumErrors;
 } sCoop = {0};
 
 static void Task_CoopLinkup(u8 taskId);
@@ -179,6 +180,8 @@ static void Task_CoopLinkup(u8 taskId)
         if (++tTimer < 30)
             break;
         SaveLinkPlayers(GetLinkPlayerCount_2());
+        DebugPrintf("coop: handshake done, players=%d master=%d id=%d",
+                    GetLinkPlayerCount_2(), IsLinkMaster(), GetMultiplayerId());
         if (IsLinkMaster() == TRUE)
             CheckShouldAdvanceLinkState();
         tTimer = 0;
@@ -489,6 +492,24 @@ void Coop_SessionFailed(void)
     sCoop.partner.valid = FALSE;
 }
 
+// Checksum errors are survivable outside of battles, where the vanilla
+// battle protocol needs an exact stream.
+bool32 Coop_ToleratesChecksumErrors(void)
+{
+    if (sCoop.inCoopBattle)
+        return FALSE;
+    return sCoop.state == COOP_STATE_LINKING || sCoop.state == COOP_STATE_ACTIVE;
+}
+
+void Coop_NoteChecksumError(void)
+{
+    sCoop.checksumErrors++;
+    // Log sparsely; these can fire every frame while drifted.
+    if (sCoop.checksumErrors == 1 || (sCoop.checksumErrors % 300) == 0)
+        DebugPrintf("coop: %d checksum errors (tolerated), state=%d players=%d",
+                    sCoop.checksumErrors, sCoop.state, GetLinkPlayerCount_2());
+}
+
 // Returns TRUE if the error belongs to a co-op session; the caller then
 // skips the CB2_LinkError screen and just closes the link. Transient
 // SIO errors are common when one game opens its link long before the
@@ -499,9 +520,24 @@ bool32 Coop_OnLinkError(void)
     {
     case COOP_STATE_LINKING:
         // The linkup task notices via HasLinkErrorOccurred and retries.
-        DebugPrintf("coop: link error during linkup (status=%08x), retrying", gLinkStatus);
+        DebugPrintf("coop: link error during linkup (status=%08x) hw=%d qfull=%d lagM=%d badId=%d lagS=%d players=%d",
+                    gLinkStatus,
+                    (gLinkStatus & LINK_STAT_ERROR_HARDWARE) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_QUEUE_FULL) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_LAG_MASTER) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_INVALID_ID) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_LAG_SLAVE) != 0,
+                    GetLinkPlayerCount_2());
         return TRUE;
     case COOP_STATE_ACTIVE:
+        DebugPrintf("coop: err bits hw=%d cksum=%d qfull=%d lagM=%d badId=%d lagS=%d players=%d",
+                    (gLinkStatus & LINK_STAT_ERROR_HARDWARE) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_CHECKSUM) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_QUEUE_FULL) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_LAG_MASTER) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_INVALID_ID) != 0,
+                    (gLinkStatus & LINK_STAT_ERROR_LAG_SLAVE) != 0,
+                    GetLinkPlayerCount_2());
         if (sCoop.inCoopBattle)
         {
             // Mid-battle errors are fatal; the battle engine owns the link.

@@ -1520,6 +1520,20 @@ static void TrySetLinkErrorBuffer(void)
     // Check if a link error has occurred
     if (sLinkOpen && EXTRACT_LINK_ERRORS(gLinkStatus))
     {
+        // A checksum error means the two games' serial streams drifted
+        // out of phase for a transfer. Vanilla treats that as fatal
+        // because a corrupted trade would be, but co-op presence packets
+        // are self-validating and superseded a few frames later, so the
+        // session rides them out. Every other error stays fatal.
+        if ((gLinkStatus & LINK_STAT_ERRORS) == LINK_STAT_ERROR_CHECKSUM
+         && Coop_ToleratesChecksumErrors())
+        {
+            gLink.badChecksum = FALSE;
+            gLinkStatus &= ~LINK_STAT_ERROR_CHECKSUM;
+            Coop_NoteChecksumError();
+            return;
+        }
+
         // Co-op sessions absorb link errors instead of showing the
         // error screen; the session just ends.
         if (Coop_OnLinkError())
