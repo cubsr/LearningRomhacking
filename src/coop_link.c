@@ -212,6 +212,8 @@ static EWRAM_DATA struct
     u16 hellosSent;
     u16 rxSeen;     // commands handed to us from the partner's slot
     u16 rxParsed;   // ...that decoded into a valid co-op packet
+    u8 dumpCount;
+    u16 lastSent[CMD_LENGTH];
     u32 checksumErrors;
 } sCoop = {0};
 
@@ -453,6 +455,7 @@ void CoopLink_BuildCmd(void)
         payload[3] = gSaveBlock2Ptr->randomizationFlags | (gSaveBlock2Ptr->playerGender << 8);
         payload[4] = 0;
         CoopBuildPacket(gSendCmd, COOP_PKT_HELLO, payload);
+        memcpy(sCoop.lastSent, gSendCmd, sizeof(sCoop.lastSent));
         return;
     }
 
@@ -489,7 +492,26 @@ void CoopLink_HandleRecvCmd(const u16 *cmd, u32 playerId)
 
     if (sCoop.state == COOP_STATE_IDLE || sCoop.state == COOP_STATE_ERROR)
         return;
-    if (playerId == sCoop.localId)
+
+    // Ground truth: dump raw words for both our own echo and the
+    // partner's slot, next to what we actually put on the wire.
+    if (sCoop.dumpCount < 8)
+    {
+        sCoop.dumpCount++;
+        DebugPrintf("coop: RX slot%d %04x %04x %04x %04x %04x %04x %04x %04x",
+                    playerId, cmd[0], cmd[1], cmd[2], cmd[3],
+                    cmd[4], cmd[5], cmd[6], cmd[7]);
+        if (sCoop.dumpCount == 1)
+            DebugPrintf("coop: TX      %04x %04x %04x %04x %04x %04x %04x %04x",
+                        sCoop.lastSent[0], sCoop.lastSent[1], sCoop.lastSent[2],
+                        sCoop.lastSent[3], sCoop.lastSent[4], sCoop.lastSent[5],
+                        sCoop.lastSent[6], sCoop.lastSent[7]);
+    }
+
+    // Only slots below the player count are refreshed by the link layer;
+    // the rest keep stale data forever, so ignore anything that isn't
+    // the partner's slot.
+    if (playerId != (u32)(sCoop.localId ^ 1))
         return;
 
     sCoop.rxSeen++;
